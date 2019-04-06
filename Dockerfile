@@ -30,6 +30,7 @@ RUN apt-get update && apt-get install -yqq apt-transport-https \
 		ca-certificates \
 		curl \
 		gnupg2 \
+        wget \
 		software-properties-common \
 	&& curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add - \
 	&& touch /etc/apt/sources.list.d/kubernetes.list \

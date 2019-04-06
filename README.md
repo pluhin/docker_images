@@ -23,10 +23,42 @@ curl -Lo minikube https://storage.googleapis.com/minikube/releases/latest/miniku
 minikube start
 kubectl cluster-info
 ```
+If you use VirtualHost without nested virtualization, then for start minikube use:
+```bash
+sudo minikube start --vm-driver none
+sudo kubectl cluster-info
+sudo kubectl proxy --address='0.0.0.0' --disable-filter=true  &
+sudo minikube dashboard --url 
+```
 Dashboard access:
 ```bash
 kubectl proxy --address='0.0.0.0' --disable-filter=true
 ```
-Open browser and put: http://YOUR_HOST_IP:8001/api/v1/namespaces/kube-system/services/http:kubernetes-dashboard:/proxy/#!/overview?namespace=default
+Open browser and put: [http://YOUR_HOST_IP:8001/api/v1/namespaces/kube-system/services/http:kubernetes-dashboard:/proxy/#!/overview?namespace=default](http://YOUR_HOST_IP:8001/api/v1/namespaces/kube-system/services/http:kubernetes-dashboard:/proxy/#!/overview?namespace=default)
+
+Check installation:
+```bash
+[plu@home ~]$ minikube status
+There is a newer version of minikube available (v1.0.0).  Download it here:
+https://github.com/kubernetes/minikube/releases/tag/v1.0.0
+
+To disable this notification, run the following:
+minikube config set WantUpdateNotification false
+host: Running
+kubelet: Running
+apiserver: Running
+kubectl: Correctly Configured: pointing to minikube-vm at 192.168.99.100
+
+[plu@home ~]$ kubectl cluster-info
+Kubernetes master is running at https://192.168.99.100:8443
+KubeDNS is running at https://192.168.99.100:8443/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy
+
+To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
+
+```
+
+192.168.99.100 - will be you k8s cluster external interface
 
 ### Jenkins image build
+Automated build here: 
+[Docker hub url](https://cloud.docker.com/repository/docker/pluhin31/jenkins_ci/general)
