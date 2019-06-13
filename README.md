@@ -1,4 +1,4 @@
-# Jenkins deployment for k8s cluster
+# Jenkins deployment for k8s and ansible
 ## What inside
 - [Dockerfile for Jenkis image](./Dockerfile) - wil be as source for Jenkins deployment in the cluster
 

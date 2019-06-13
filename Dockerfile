@@ -1,4 +1,4 @@
-FROM jenkins/jenkins:2.150.1
+FROM jenkins/jenkins:latest
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -22,8 +22,8 @@ RUN /usr/local/bin/install-plugins.sh ssh-slaves \
 	configuration-as-code-support \
 	configuration-as-code \
     slack
-
 USER root
+
 RUN apt-get update && apt-get install -yqq apt-transport-https \
 		python-pip \
 		sshpass \
@@ -42,7 +42,7 @@ RUN apt-get update && apt-get install -yqq apt-transport-https \
         stable" \
 	&& apt-get update \
 	&& apt-get install -y kubectl -qq \
-	&& pip install ansible==2.7.3 -qq \
+	&& pip install ansible==2.8 -qq \
 		awscli \
 	&& git config --global core.sshCommand 'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no' \
 	&& apt-get -y install docker-ce -qq \
@@ -60,5 +60,4 @@ RUN apt-get update && apt-get install -yqq apt-transport-https \
 	    /usr/share/man \
 	    /usr/share/doc \
 	    /usr/share/doc-base
-
 USER jenkins
