@@ -14,3 +14,8 @@ services:
       - "8080:8080"
       - "5000:5000"
       - "50000:50000"
+  icinga2:
+    image: pluhin31/icinga2_agent:latest
+    container_name: icinga2_agent
+    ports:
+    - "5665:5665"

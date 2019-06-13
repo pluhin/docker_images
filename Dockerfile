@@ -1,5 +1,7 @@
 FROM jenkins/jenkins:latest
 
+LABEL maintainer="pluhin@gmail.com"
+
 ARG DEBIAN_FRONTEND=noninteractive
 
 # install plugins
