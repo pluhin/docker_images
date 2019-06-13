@@ -15,7 +15,6 @@ RUN /usr/local/bin/install-plugins.sh ssh-slaves \
 	github \
 	mask-passwords \
 	multiple-scms \
-	kubernetes \
 	ansicolor \
 	blueocean \
 	stashNotifier \
@@ -34,16 +33,6 @@ RUN apt-get update && apt-get install -yqq apt-transport-https \
 		gnupg2 \
         wget \
 		software-properties-common \
-	&& curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add - \
-	&& touch /etc/apt/sources.list.d/kubernetes.list \
-	&& echo "deb http://apt.kubernetes.io/ kubernetes-xenial main" | tee -a /etc/apt/sources.list.d/kubernetes.list \
-	&& curl -fsSL https://download.docker.com/linux/$(. /etc/os-release; echo "$ID")/gpg > /tmp/dkey; apt-key add /tmp/dkey \
-    && add-apt-repository \
-        "deb [arch=amd64] https://download.docker.com/linux/$(. /etc/os-release; echo "$ID") \
-        $(lsb_release -cs) \
-        stable" \
-	&& apt-get update \
-	&& apt-get install -y kubectl -qq \
 	&& pip install ansible==2.8 -qq \
 		awscli \
 	&& git config --global core.sshCommand 'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no' \
