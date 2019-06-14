@@ -45,6 +45,7 @@ RUN apt-get update && apt-get install -yqq apt-transport-https \
 	&& apt-get -y install docker-ce -qq \
     && apt-get install rsync -y \
 	&& gpasswd -a jenkins docker \
+	&& usermod -a -G docker jenkins \
     && newgrp docker \
 	&& echo "    StrictHostKeyChecking no" >> /etc/ssh/ssh_config \
 	&& echo "    UserKnownHostsFile=/dev/null" >> /etc/ssh/ssh_config \
@@ -57,4 +58,7 @@ RUN apt-get update && apt-get install -yqq apt-transport-https \
 	    /usr/share/man \
 	    /usr/share/doc \
 	    /usr/share/doc-base
+RUN (echo 'jenkins            ALL = (ALL) NOPASSWD: ALL' > /etc/sudoers.d/jenkinsnosudo &&\
+     chmod 0440 /etc/sudoers.d/jenkinsnosudo)
+
 USER jenkins
