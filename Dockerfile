@@ -6,6 +6,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 # install plugins
 RUN /usr/local/bin/install-plugins.sh ssh-slaves \
+	ansible \
 	email-ext \
 	mailer \
 	greenballs \
@@ -15,6 +16,7 @@ RUN /usr/local/bin/install-plugins.sh ssh-slaves \
 	github \
 	mask-passwords \
 	multiple-scms \
+	kubernetes \
 	ansicolor \
 	blueocean \
 	stashNotifier \
@@ -22,6 +24,12 @@ RUN /usr/local/bin/install-plugins.sh ssh-slaves \
 	credentials \
 	configuration-as-code-support \
 	configuration-as-code \
+	command-launcher \
+	robot \
+	external-monitor-job \
+	ssh-agent \
+	bitbucket \
+	pipeline-stage-view \
     slack
 USER root
 
@@ -33,8 +41,10 @@ RUN apt-get update && apt-get install -yqq apt-transport-https \
 		gnupg2 \
         wget \
 		software-properties-common \
-	&& pip install ansible==2.8 -qq \
+	&& pip install ansible==2.9.9 -qq \
+		molecule \
 		awscli \
+		cryptography \
 	&& curl -fsSL https://download.docker.com/linux/$(. /etc/os-release; echo "$ID")/gpg > /tmp/dkey; apt-key add /tmp/dkey \
     && add-apt-repository \
         "deb [arch=amd64] https://download.docker.com/linux/$(. /etc/os-release; echo "$ID") \

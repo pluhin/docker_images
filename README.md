@@ -1,6 +1,6 @@
 # Jenkins CI docker file
 ## What inside
-- Ansible 2.8
+- Ansible
 - docker
 
 ## Jenkins image build
