@@ -3,7 +3,7 @@ FROM jenkins/jenkins:latest
 LABEL maintainer="pluhin@gmail.com"
 
 ARG DEBIAN_FRONTEND=noninteractive
-
+ENV JENKINS_UC_DOWNLOAD="https://mirror.yandex.ru/mirrors/jenkins"
 # install plugins
 RUN /usr/local/bin/install-plugins.sh ssh-slaves \
 	ansible \
@@ -14,8 +14,6 @@ RUN /usr/local/bin/install-plugins.sh ssh-slaves \
 	parameterized-trigger \
 	rebuild \
 	github \
-	mask-passwords \
-	multiple-scms \
 	kubernetes \
 	ansicolor \
 	blueocean \
@@ -25,7 +23,6 @@ RUN /usr/local/bin/install-plugins.sh ssh-slaves \
 	configuration-as-code-support \
 	configuration-as-code \
 	command-launcher \
-	robot \
 	external-monitor-job \
 	ssh-agent \
 	bitbucket \
