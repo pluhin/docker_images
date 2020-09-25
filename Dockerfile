@@ -3,8 +3,8 @@ FROM jenkins/jenkins:latest
 LABEL maintainer="pluhin@gmail.com"
 
 ARG DEBIAN_FRONTEND=noninteractive
-ENV JENKINS_UC_DOWNLOAD="https://mirror.yandex.ru/mirrors/jenkins"
-# install plugins
+# ENV JENKINS_UC_DOWNLOAD="https://mirror.yandex.ru/mirrors/jenkins"
+## install plugins
 RUN /usr/local/bin/install-plugins.sh ssh-slaves \
 	ansible \
 	email-ext \
@@ -20,12 +20,10 @@ RUN /usr/local/bin/install-plugins.sh ssh-slaves \
 	stashNotifier \
 	show-build-parameters \
 	credentials \
-	configuration-as-code-support \
 	configuration-as-code \
 	command-launcher \
 	external-monitor-job \
 	ssh-agent \
-	bitbucket \
 	pipeline-stage-view \
     slack
 USER root
