@@ -29,17 +29,11 @@ RUN /usr/local/bin/install-plugins.sh ssh-slaves \
 USER root
 
 RUN apt-get update && apt-get install -yqq apt-transport-https \
-		python-pip \
-		sshpass \
 		ca-certificates \
 		curl \
 		gnupg2 \
         wget \
 		software-properties-common \
-	&& pip install ansible==2.9.9 -qq \
-		molecule \
-		awscli \
-		cryptography \
 	&& curl -fsSL https://download.docker.com/linux/$(. /etc/os-release; echo "$ID")/gpg > /tmp/dkey; apt-key add /tmp/dkey \
     && add-apt-repository \
         "deb [arch=amd64] https://download.docker.com/linux/$(. /etc/os-release; echo "$ID") \
