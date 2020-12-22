@@ -13,7 +13,6 @@ node('master') {
       image = docker.build(
               "${dockerRegistry}/${name}:${version}",
               "--network=host .",
-              //"-f ./Dockerfiles/i2_web.Dockerfile ./Dockerfiles"
       )
   }
 
