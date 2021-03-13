@@ -26,20 +26,17 @@ RUN /usr/local/bin/install-plugins.sh ssh-slaves \
 	external-monitor-job \
 	ssh-agent \
 	pipeline-stage-view \
-    slack
+    slack \
+	instant-messaging \
+	global-slack-notifier
 USER root
 
 RUN apt-get update && apt-get install -yqq apt-transport-https \
-		python-pip \
-		sshpass \
 		ca-certificates \
 		curl \
 		gnupg2 \
         wget \
 		software-properties-common \
-	&& pip install ansible==2.9.9 -qq \
-		awscli \
-		cryptography \
 	&& curl -fsSL https://download.docker.com/linux/$(. /etc/os-release; echo "$ID")/gpg > /tmp/dkey; apt-key add /tmp/dkey \
     && add-apt-repository \
         "deb [arch=amd64] https://download.docker.com/linux/$(. /etc/os-release; echo "$ID") \
@@ -48,7 +45,6 @@ RUN apt-get update && apt-get install -yqq apt-transport-https \
 	&& apt-get update \
 	&& git config --global core.sshCommand 'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no' \
 	&& apt-get -y install docker-ce -qq \
-    && apt-get install rsync -y \
 	&& gpasswd -a jenkins docker \
 	&& usermod -a -G docker jenkins \
     && newgrp docker \
@@ -63,7 +59,7 @@ RUN apt-get update && apt-get install -yqq apt-transport-https \
 	    /usr/share/man \
 	    /usr/share/doc \
 	    /usr/share/doc-base
-RUN (echo 'jenkins            ALL = (ALL) NOPASSWD: ALL' > /etc/sudoers.d/jenkinsnosudo &&\
-     chmod 0440 /etc/sudoers.d/jenkinsnosudo)
+# RUN (echo 'jenkins            ALL = (ALL) NOPASSWD: ALL' > /etc/sudoers.d/jenkinsnosudo &&\
+#      chmod 0440 /etc/sudoers.d/jenkinsnosudo)
 
 USER jenkins
