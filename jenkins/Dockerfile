@@ -1,34 +1,33 @@
 FROM jenkins/jenkins:latest
 
 LABEL maintainer="pluhin@gmail.com"
-
 ARG DEBIAN_FRONTEND=noninteractive
-# ENV JENKINS_UC_DOWNLOAD="https://mirror.yandex.ru/mirrors/jenkins"
+
 ## install plugins
 RUN /usr/local/bin/install-plugins.sh ssh-slaves \
-	ansible \
-    docker-plugin \
-	email-ext \
-	mailer \
-	greenballs \
-	simple-theme-plugin \
-	parameterized-trigger \
-	rebuild \
-	github \
-	kubernetes \
-	ansicolor \
-	blueocean \
-	stashNotifier \
-	show-build-parameters \
-	credentials \
-	configuration-as-code \
-	command-launcher \
-	external-monitor-job \
-	ssh-agent \
-	pipeline-stage-view \
-    slack \
-	instant-messaging \
-	global-slack-notifier
+		ansible \
+		docker-plugin \
+		email-ext \
+		mailer \
+		greenballs \
+		simple-theme-plugin \
+		parameterized-trigger \
+		rebuild \
+		github \
+		kubernetes \
+		ansicolor \
+		blueocean \
+		stashNotifier \
+		show-build-parameters \
+		credentials \
+		configuration-as-code \
+		command-launcher \
+		external-monitor-job \
+		ssh-agent \
+		pipeline-stage-view \
+		slack \
+		instant-messaging \
+		global-slack-notifier
 USER root
 
 RUN apt-get update && apt-get install -yqq apt-transport-https \

@@ -12,7 +12,7 @@ node('master') {
   stage ("Docker: Build") {
       image = docker.build(
               "${dockerRegistry}/${name}:${version}",
-              "--network=host .",
+              "--network=host ./jenkins/Dockerfile .",
       )
   }
 
