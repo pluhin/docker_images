@@ -1,13 +1,24 @@
-name: Print a single or all environment variables
+name: Get changed files
 on: push
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
     steps:
       - name: Check out repo
         uses: actions/checkout@v2
-      - run: echo " Print a single environment variable (the commit SHA ) - ${{ github.sha }} "
-      - run: echo "Print all environment variables"
-      - run:  env
+      - id: files
+        uses: jitterbit/get-changed-files@v1
+      - run: |
+          echo "All:"
+          echo "${{ steps.abc.outputs.all }}"
+          echo "Added:"
+          echo "${{ steps.abc.outputs.added }}"
+          echo "Removed:"
+          echo "${{ steps.abc.outputs.removed }}"
+          echo "Renamed:"
+          echo "${{ steps.abc.outputs.renamed }}"
+          echo "Modified:"
+          echo "${{ steps.abc.outputs.modified }}"
+          echo "Added+Modified:"
+          echo "${{ steps.abc.outputs.added_modified }}"
