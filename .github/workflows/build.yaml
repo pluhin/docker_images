@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - 'jenkins/**'
+      - 'ansible/**'
 jobs:
   push_to_registries:
     name: Push Docker image
@@ -13,9 +14,14 @@ jobs:
     steps:
       - name: Check out the repo
         uses: actions/checkout@v2
-      - run: echo " Print a single environment variable (the commit SHA ) - ${{ github.sha }} "
-      - run: echo "Print all environment variables"
-      - run:  env
+      - uses: dorny/paths-filter@v2
+        id: filter
+        with:
+          filters: |
+            jenkins:
+              - 'jenkins/**'
+            ansible:
+              - 'ansible/**'
       - name: Log in to the Container registry
         uses: docker/login-action@v1
         with:
@@ -24,8 +30,17 @@ jobs:
           password: ${{ secrets.CR_PAT }}
 
       - name: Build and push Docker images
+        if: steps.filter.outputs.jenkins == 'true'
         uses: docker/build-push-action@v2
         with:
           context: ./jenkins
           push: true
           tags: ghcr.io/pluhin/jenkins:latest
+
+      - name: Build and push Docker images
+        if: steps.filter.outputs.ansible == 'true'
+        uses: docker/build-push-action@v2
+        with:
+          context: ./ansible
+          push: true
+          tags: ghcr.io/pluhin/ansible:latest
