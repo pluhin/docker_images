@@ -4,6 +4,9 @@ on:
     paths:
       - 'jenkins/**'
       - 'ansible/**'
+      - 'icinga2-core/**'
+      - 'icingaweb2/**'
+      - 'plex/**'
 jobs:
   push_to_registries:
     name: Push Docker image
@@ -22,6 +25,8 @@ jobs:
               - 'jenkins/**'
             ansible:
               - 'ansible/**'
+            plex:
+              - 'plex/**'
       - name: Log in to the Container registry
         uses: docker/login-action@v1
         with:
@@ -29,7 +34,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.CR_PAT }}
 
-      - name: Build and push Docker images
+      - name: Build and push Jenkins image
         if: steps.filter.outputs.jenkins == 'true'
         uses: docker/build-push-action@v2
         with:
@@ -37,10 +42,17 @@ jobs:
           push: true
           tags: ghcr.io/pluhin/jenkins:latest
 
-      - name: Build and push Docker images
+      - name: Build and push ansible image
         if: steps.filter.outputs.ansible == 'true'
         uses: docker/build-push-action@v2
         with:
           context: ./ansible
           push: true
           tags: ghcr.io/pluhin/ansible:latest
+      - name: Build and push plex image
+        if: steps.filter.outputs.ansible == 'true'
+        uses: docker/build-push-action@v2
+        with:
+          context: ./plex
+          push: true
+          tags: ghcr.io/pluhin/plex:latest
