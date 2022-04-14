@@ -27,7 +27,8 @@ RUN /usr/local/bin/install-plugins.sh ssh-slaves \
 		pipeline-stage-view \
 		slack \
 		instant-messaging \
-		global-slack-notifier
+		global-slack-notifier \
+		docker-workflow
 USER root
 
 RUN apt-get update && apt-get install -yqq apt-transport-https \
@@ -35,6 +36,18 @@ RUN apt-get update && apt-get install -yqq apt-transport-https \
 		curl \
 		gnupg2 \
         wget \
+		software-properties-common \
+	&& curl -fsSL https://download.docker.com/linux/$(. /etc/os-release; echo "$ID")/gpg > /tmp/dkey; apt-key add /tmp/dkey \
+    && add-apt-repository \
+        "deb [arch=amd64] https://download.docker.com/linux/$(. /etc/os-release; echo "$ID") \
+        $(lsb_release -cs) \
+        stable" \
+	&& apt-get update \
+	&& git config --global core.sshCommand 'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no' \
+	&& apt-get -y install docker-ce -qq \
+	&& gpasswd -a jenkins docker \
+	&& usermod -a -G docker jenkins \
+    && newgrp docker \
 	&& echo "    StrictHostKeyChecking no" >> /etc/ssh/ssh_config \
 	&& echo "    UserKnownHostsFile=/dev/null" >> /etc/ssh/ssh_config \
     && apt-get purge --auto-remove -yqq \
