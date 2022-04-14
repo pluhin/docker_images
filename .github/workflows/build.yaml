@@ -43,7 +43,7 @@ jobs:
         with:
           context: ./jenkins
           push: true
-          tags: ghcr.io/pluhin/jenkins:${{ github.run_number }}
+          tags: ghcr.io/pluhin/jenkins:latest
 
       - name: Build and push ansible image
         if: steps.filter.outputs.ansible == 'true'
