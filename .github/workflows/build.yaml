@@ -30,6 +30,8 @@ jobs:
               - 'plex/**'
             curl:
               - 'curl/**'
+            hubot:
+              - 'hubot/**'
       - name: Log in to the Container registry
         uses: docker/login-action@v1
         with:
@@ -68,3 +70,10 @@ jobs:
           context: ./curl
           push: true
           tags: ghcr.io/pluhin/curl:latest
+      - name: Build and push hubot image
+        if: steps.filter.outputs.hubot == 'true'
+        uses: docker/build-push-action@v2
+        with:
+          context: ./hubot
+          push: true
+          tags: ghcr.io/pluhin/hubot:latest
