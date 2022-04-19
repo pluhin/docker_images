@@ -8,6 +8,7 @@ on:
       - 'icingaweb2/**'
       - 'plex/**'
       - 'curl/**'
+      - 'hubot/**'
 jobs:
   push_to_registries:
     name: Push Docker image
