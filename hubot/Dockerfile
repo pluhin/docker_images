@@ -4,14 +4,10 @@ ENV DEBIAN_FRONTEND "noninteractive"
 ENV HUBOT_NAME "ha"
 ENV HUBOT_OWNER "pluhin@gmail.com"
 ENV HUBOT_DESCRIPTION "Home pet"
-ENV REDIS_URL "redis://localhost/hubot"
 
 RUN useradd hubot -m
-
 RUN npm install -g hubot coffeescript yo generator-hubot
-
 USER hubot
-
 WORKDIR /home/hubot
 COPY . /home/hubot
 RUN yo hubot --owner="${HUBOT_OWNER}" --name="${HUBOT_NAME}" --description="${HUBOT_DESCRIPTION}" --defaults && sed -i /heroku/d ./external-scripts.json && sed -i /redis-brain/d ./external-scripts.json && npm install hubot-scripts && npm install hubot-slack --save
