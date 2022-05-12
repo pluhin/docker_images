@@ -10,7 +10,7 @@ on:
       - 'curl/**'
       - 'hubot/**'
 jobs:
-  push_to_registries:
+  push_image:
     name: Push Docker image
     runs-on: ubuntu-latest
     permissions:
@@ -78,3 +78,16 @@ jobs:
           context: ./hubot
           push: true
           tags: ghcr.io/pluhin/hubot:latest
+  notification:
+    needs: push_image
+    runs-on: ubuntu-latest
+    steps:
+    - name: Slack Notification
+      uses: rtCamp/action-slack-notify@v2
+      env:
+        SLACK_CHANNEL: monitor
+        SLACK_COLOR: ${{ job.status }}
+        SLACK_MESSAGE: "Docker image is ready ghcr.io/pluhin/${{ needs.filter.outputs }}:latest"
+        SLACK_TITLE: Docker image build status
+        SLACK_USERNAME: GitHub
+        SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
