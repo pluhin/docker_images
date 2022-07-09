@@ -9,6 +9,7 @@ on:
       - 'plex/**'
       - 'curl/**'
       - 'hubot/**'
+      - 'busy-box/**'
 jobs:
   push_image:
     name: Push Docker image
