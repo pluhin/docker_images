@@ -35,7 +35,7 @@ RUN apt-get update && apt-get install -yqq apt-transport-https \
 		ca-certificates \
 		curl \
 		gnupg2 \
-        wget \
+        wget jq \
 		software-properties-common \
 	&& curl -fsSL https://download.docker.com/linux/$(. /etc/os-release; echo "$ID")/gpg > /tmp/dkey; apt-key add /tmp/dkey \
     && add-apt-repository \
