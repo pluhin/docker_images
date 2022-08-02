@@ -4,7 +4,7 @@ LABEL maintainer="pluhin@gmail.com"
 ARG DEBIAN_FRONTEND=noninteractive
 
 ## install plugins
-RUN /usr/local/bin/install-plugins.sh ssh-slaves \
+RUN jenkins-plugin-cli --plugins ssh-slaves \
 		ansible \
 		docker-plugin \
 		email-ext \
