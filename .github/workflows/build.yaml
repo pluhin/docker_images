@@ -19,7 +19,7 @@ jobs:
       contents: read
     steps:
       - name: Check out the repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - uses: dorny/paths-filter@v2
         id: filter
         with:
@@ -37,7 +37,7 @@ jobs:
             busy-box:
               - 'busy-box/**'
       - name: Log in to the Container registry
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -45,7 +45,7 @@ jobs:
 
       - name: Build and push Jenkins image
         if: steps.filter.outputs.jenkins == 'true'
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v3
         with:
           context: ./jenkins
           push: true
@@ -53,7 +53,7 @@ jobs:
 
       - name: Build and push ansible image
         if: steps.filter.outputs.ansible == 'true'
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v3
         with:
           context: ./ansible
           push: true
@@ -61,7 +61,7 @@ jobs:
 
       - name: Build and push plex image
         if: steps.filter.outputs.plex == 'true'
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v3
         with:
           context: ./plex
           push: true
@@ -69,21 +69,21 @@ jobs:
 
       - name: Build and push curl image
         if: steps.filter.outputs.curl == 'true'
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v3
         with:
           context: ./curl
           push: true
           tags: ghcr.io/pluhin/curl:latest
       - name: Build and push hubot image
         if: steps.filter.outputs.hubot == 'true'
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v3
         with:
           context: ./hubot
           push: true
           tags: ghcr.io/pluhin/hubot:latest
       - name: Build and push busy-box image
         if: steps.filter.outputs.busy-box == 'true'
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v3
         with:
           context: ./busy-box
           push: true
