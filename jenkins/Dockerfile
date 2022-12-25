@@ -28,7 +28,8 @@ RUN jenkins-plugin-cli --plugins ssh-slaves \
 		slack \
 		instant-messaging \
 		global-slack-notifier \
-		docker-workflow
+		docker-workflow \
+		job-dsl
 USER root
 
 RUN apt-get update && apt-get install -yqq apt-transport-https \
