@@ -13,6 +13,10 @@ on:
         - jenkins
         - plex
         - web-demo
+      tagImage:
+        description: 'please add tag'
+        required: true
+        default: 'latest'
 jobs:
   push_image:
     name: Push Docker image
@@ -35,7 +39,7 @@ jobs:
         with:
           context: ./${{ inputs.imageToBuild }}
           push: true
-          tags: ghcr.io/pluhin/${{ inputs.imageToBuild }}:0.2.0
+          tags: ghcr.io/pluhin/${{ inputs.imageToBuild }}:${{ inputs.tagImage }}
   notification:
     needs: push_image
     runs-on: ubuntu-latest
