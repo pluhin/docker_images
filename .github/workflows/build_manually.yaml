@@ -12,6 +12,7 @@ on:
         - busy-box
         - jenkins
         - plex
+        - hubot
         - web-demo
       tagImage:
         description: 'please add tag'
