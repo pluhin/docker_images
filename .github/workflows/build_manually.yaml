@@ -41,16 +41,16 @@ jobs:
           context: ./${{ inputs.imageToBuild }}
           push: true
           tags: ghcr.io/pluhin/${{ inputs.imageToBuild }}:${{ inputs.tagImage }}
-  notification:
-    needs: push_image
-    runs-on: ubuntu-latest
-    steps:
-    - name: Slack Notification
-      uses: rtCamp/action-slack-notify@v2
-      env:
-        SLACK_CHANNEL: monitor
-        SLACK_COLOR: ${{ job.status }}
-        SLACK_MESSAGE: "Docker image is ready ghcr.io/pluhin/${{ inputs.imageToBuild }}:latest"
-        SLACK_TITLE: Docker image build status
-        SLACK_USERNAME: GitHub
-        SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+#   notification:
+#     needs: push_image
+#     runs-on: ubuntu-latest
+#     steps:
+#     - name: Slack Notification
+#       uses: rtCamp/action-slack-notify@v2
+#       env:
+#         SLACK_CHANNEL: monitor
+#         SLACK_COLOR: ${{ job.status }}
+#         SLACK_MESSAGE: "Docker image is ready ghcr.io/pluhin/${{ inputs.imageToBuild }}:latest"
+#         SLACK_TITLE: Docker image build status
+#         SLACK_USERNAME: GitHub
+#         SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
