@@ -9,8 +9,8 @@ RUN useradd hubot -m
 RUN npm install -g hubot coffeescript yo generator-hubot
 USER hubot
 WORKDIR /home/hubot
-COPY . /home/hubot
-RUN chown hubot:hubot /home/hubot/package.json
+#COPY . /home/hubot
+#RUN chown hubot:hubot /home/hubot/package.json
 RUN yo hubot --owner="${HUBOT_OWNER}" --name="${HUBOT_NAME}" --description="${HUBOT_DESCRIPTION}" --defaults \
     && sed -i /heroku/d ./external-scripts.json \
     && sed -i /redis-brain/d ./external-scripts.json \
