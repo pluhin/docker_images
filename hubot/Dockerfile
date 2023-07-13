@@ -1,25 +1,31 @@
-FROM node:latest
-ENV HUBOT_SLACK_TOKEN nope-1234-5678-91011-00e4dd
-ENV DEBIAN_FRONTEND "noninteractive"
-ENV HUBOT_NAME "ha"
-ENV HUBOT_OWNER "pluhin@gmail.com"
-ENV HUBOT_DESCRIPTION "Home pet"
+FROM library/node:lts-alpine
 
-RUN useradd hubot -m
-RUN npm install -g hubot coffeescript yo generator-hubot
+ENV HUBOT_VERSION 3.3.2
+
+ENV HUBOT_NAME robot
+ARG HUBOT_OWNER="Siarhei Pishchyk <pluhin@gmail.com>"
+ARG HUBOT_DESCRIPTION="Hubot robot. Born to serve."
+
+ENV HUBOT_HOME /home/hubot
+
+RUN npm install -g coffeescript yo generator-hubot@next
+
+RUN addgroup -g 501 hubot && \
+    adduser -D -h $HUBOT_HOME -u 501 -G hubot hubot
+
+WORKDIR $HUBOT_HOME
+
 USER hubot
-WORKDIR /home/hubot
-#COPY . /home/hubot
-#RUN chown hubot:hubot /home/hubot/package.json
-RUN yo hubot --owner="${HUBOT_OWNER}" --name="${HUBOT_NAME}" --description="${HUBOT_DESCRIPTION}" --defaults \
-    && sed -i /heroku/d ./external-scripts.json \
-    && sed -i /redis-brain/d ./external-scripts.json \
-    && npm install hubot-scripts && npm install hubot-slack --save
 
-VOLUME ["/home/hubot/scripts"]
+RUN yo hubot --no-insight \
+             --adapter=slack \
+             --owner="$HUBOT_OWNER" \
+             --name="$HUBOT_NAME" \
+             --description="$HUBOT_DESCRIPTION" \
+             --defaults
 
-EXPOSE 8080
+COPY entrypoint.sh ./
 
-CMD node -e "console.log(JSON.stringify('$EXTERNAL_SCRIPTS'.split(',')))" > external-scripts.json && \
-	npm install $(node -e "console.log('$EXTERNAL_SCRIPTS'.split(',').join(' '))") && \
-	bin/hubot -n $HUBOT_NAME --adapter slack
+ENTRYPOINT ["./entrypoint.sh"]
+
+CMD ["--name", "$HUBOT_NAME", "--adapter", "slack"]
