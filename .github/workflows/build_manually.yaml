@@ -1,4 +1,4 @@
-name: Publish Docker image. Manual
+name: Manual publish Docker image
 on:
   workflow_dispatch:
     inputs:
