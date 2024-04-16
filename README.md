@@ -1,10 +1,8 @@
-# Jenkins CI docker file
+## Busy-box
 
-## What inside
+- based on Ubuntu 22.04
+- mc vim curl wget git telnet netcat
+
+## Jenkins CI docker file
 
 - docker
-
-## Jenkins image build
-
-Automated build here:
-[Docker hub url](https://cloud.docker.com/repository/docker/pluhin31/jenkins_ci/general)
