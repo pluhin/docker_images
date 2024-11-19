@@ -17,6 +17,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Dump GitHub context
+        env:
+          GITHUB_CONTEXT: ${{ toJson(github) }}
+        run: echo "$GITHUB_CONTEXT"
+
       - name: Get Changed Folders
         id: get-changes
         run: |
@@ -40,6 +45,8 @@ jobs:
             echo "changed-folders=[]" >> $GITHUB_ENV
             echo "has-changes=false" >> $GITHUB_ENV
           fi
+          ### Validation
+          echo "$GITHUB_ENV"
 
   build-and-push:
     needs: detect-changes
