@@ -1,41 +1,58 @@
-name: Auto publish Docker image
+name: Build and Publish Docker Images
+
 on:
   push:
-    paths:
-      - 'jenkins/**'
-      - 'ansible/**'
-      - 'icinga2-core/**'
-      - 'icingaweb2/**'
-      - 'plex/**'
-      - 'curl/**'
-      - 'hubot/**'
-      - 'busy-box/**'
+    branches:
+      - master
+  workflow_dispatch:
+
 jobs:
-  push_image:
-    name: Push Docker image
+  detect-changes:
     runs-on: ubuntu-latest
-    permissions:
-      packages: write
-      contents: read
+    outputs:
+      changed-folders: ${{ steps.get-changes.outputs.changed-folders }}
+      has-changes: ${{ steps.get-changes.outputs.has-changes }}
+
     steps:
-      - name: Check out the repo
+      - name: Checkout code
         uses: actions/checkout@v3
-      - uses: dorny/paths-filter@v2
-        id: filter
-        with:
-          filters: |
-            jenkins:
-              - 'jenkins/**'
-            ansible:
-              - 'ansible/**'
-            plex:
-              - 'plex/**'
-            curl:
-              - 'curl/**'
-            hubot:
-              - 'hubot/**'
-            busy-box:
-              - 'busy-box/**'
+
+      - name: Get Changed Folders
+        id: get-changes
+        run: |
+          # Get all changed top-level folders
+          CHANGED_FOLDERS=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | awk -F'/' '{print $1}' | sort -u | uniq)
+          
+          # Filter folders containing Dockerfile
+          DOCKER_FOLDERS=""
+          for folder in $CHANGED_FOLDERS; do
+            if [ -f "$folder/Dockerfile" ]; then
+              DOCKER_FOLDERS="$DOCKER_FOLDERS,\"$folder\""
+            fi
+          done
+
+          # Remove leading comma and set as output
+          if [ -n "$DOCKER_FOLDERS" ]; then
+            DOCKER_FOLDERS="[${DOCKER_FOLDERS:1}]"
+            echo "changed-folders=$DOCKER_FOLDERS" >> $GITHUB_ENV
+            echo "has-changes=true" >> $GITHUB_ENV
+          else
+            echo "changed-folders=[]" >> $GITHUB_ENV
+            echo "has-changes=false" >> $GITHUB_ENV
+          fi
+
+  build-and-push:
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    if: needs.detect-changes.outputs.has-changes == 'true'
+    strategy:
+      matrix:
+        folder: ${{ fromJson(needs.detect-changes.outputs.changed-folders) }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
       - name: Log in to the Container registry
         uses: docker/login-action@v2
         with:
@@ -43,61 +60,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.CR_PAT }}
 
-      - name: Build and push Jenkins image
-        if: steps.filter.outputs.jenkins == 'true'
-        uses: docker/build-push-action@v3
-        with:
-          context: ./jenkins
-          push: true
-          tags: ghcr.io/pluhin/jenkins:latest
+      - name: Build and Push Image
+        env:
+          IMAGE_NAME: ${{ github.actor }}/${{ matrix.folder }}
+          TAG: ${{ github.sha }}
+        run: |
+          docker build -t $IMAGE_NAME:$TAG ./${{ matrix.folder }}
+          docker push $IMAGE_NAME:$TAG
 
-      - name: Build and push ansible image
-        if: steps.filter.outputs.ansible == 'true'
-        uses: docker/build-push-action@v3
+      - name: Notify Slack
+        uses: rtCamp/action-slack-notify@v2
         with:
-          context: ./ansible
-          push: true
-          tags: ghcr.io/pluhin/ansible:latest
-
-      - name: Build and push plex image
-        if: steps.filter.outputs.plex == 'true'
-        uses: docker/build-push-action@v3
-        with:
-          context: ./plex
-          push: true
-          tags: ghcr.io/pluhin/plex:latest
-
-      - name: Build and push curl image
-        if: steps.filter.outputs.curl == 'true'
-        uses: docker/build-push-action@v3
-        with:
-          context: ./curl
-          push: true
-          tags: ghcr.io/pluhin/curl:latest
-      - name: Build and push hubot image
-        if: steps.filter.outputs.hubot == 'true'
-        uses: docker/build-push-action@v3
-        with:
-          context: ./hubot
-          push: true
-          tags: ghcr.io/pluhin/hubot:latest
-      - name: Build and push busy-box image
-        if: steps.filter.outputs.busy-box == 'true'
-        uses: docker/build-push-action@v3
-        with:
-          context: ./busy-box
-          push: true
-          tags: ghcr.io/pluhin/busy-box:latest
-  notification:
-    needs: push_image
-    runs-on: ubuntu-latest
-    steps:
-    - name: Slack Notification
-      uses: rtCamp/action-slack-notify@v2
-      env:
-        SLACK_CHANNEL: monitor
-        SLACK_COLOR: ${{ job.status }}
-        SLACK_MESSAGE: "Docker image is ready ghcr.io/pluhin/${{ needs.filter.outputs }}:latest"
-        SLACK_TITLE: Docker image build status
-        SLACK_USERNAME: GitHub
-        SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          webhook-url: ${{ secrets.SLACK_WEBHOOK }}
+          message: |
+            🎉 *Docker image built and pushed!*
+            - Image: `${ github.actor }}/${{ matrix.folder }}`
+            - Tag: `${{ github.sha }}`
