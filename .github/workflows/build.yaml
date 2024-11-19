@@ -25,9 +25,19 @@ jobs:
       - name: Get Changed Folders
         id: get-changes
         run: |
+          # Ensure we have the previous SHA
+          PREVIOUS_SHA="${{ github.event.before }}"
+          if [ -z "$PREVIOUS_SHA" ]; then
+            PREVIOUS_SHA=$(git rev-parse HEAD~1)
+          fi
+
+          # Log SHAs for debugging
+          echo "Previous Commit SHA: $PREVIOUS_SHA"
+          echo "Current Commit SHA: ${{ github.sha }}"
+
           # Get all changed top-level folders
-          CHANGED_FOLDERS=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | awk -F'/' '{print $1}' | sort -u | uniq)
-          
+          CHANGED_FOLDERS=$(git diff --name-only $PREVIOUS_SHA ${{ github.sha }} | awk -F'/' '{print $1}' | sort -u | uniq)
+        
           # Filter folders containing Dockerfile
           DOCKER_FOLDERS=""
           for folder in $CHANGED_FOLDERS; do
