@@ -20,20 +20,36 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.CR_PAT }}
 
-      - name: Build and push Jenkins image
-        if: steps.filter.outputs.jenkins == 'true'
-        uses: docker/build-push-action@v3
+      - name: Build Docker image
+        id: build_docker
+        run: |
+          docker build -t ghcr.io/pluhin/jenkins:${{ github.sha }} ./jenkins
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.28.0
         with:
-          context: ./jenkins
-          push: true
-          tags: ghcr.io/pluhin/jenkins:${{ github.sha }}
+          image-ref: 'ghcr.io/pluhin/jenkins:${{ github.sha }}'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
 
       - name: Slack Notification
         uses: rtCamp/action-slack-notify@v2
+        if: ${{ success() }}
         env:
           SLACK_CHANNEL: monitor
           SLACK_COLOR: ${{ job.status }}
-          SLACK_MESSAGE: "Docker image is ready ghcr.io/pluhin/jenkins:${{ github.sha }}"
+          SLACK_MESSAGE: |
+            "The build was successful for image 
+            ghcr.io/pluhin/jenkins:${{ github.sha }}"
           SLACK_TITLE: Docker image build status
           SLACK_USERNAME: GitHub
           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
