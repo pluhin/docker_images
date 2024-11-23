@@ -4,7 +4,7 @@ on:
     paths:
       - 'jenkins/**'
 jobs:
-  push_image:
+  build_check_image:
     name: Push Docker image
     runs-on: ubuntu-latest
     permissions:
@@ -12,7 +12,7 @@ jobs:
       contents: read
     steps:
       - name: Check out the repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Log in to the Container registry
         uses: docker/login-action@v2
         with:
@@ -27,20 +27,15 @@ jobs:
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.28.0
-        TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2
+        env:
+          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2
         with:
           image-ref: 'ghcr.io/pluhin/jenkins:${{ github.sha }}'
           exit-code: '1'
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-
-      - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'trivy-results.sarif'
+          format: 'table'
 
       - name: Slack Notification
         uses: rtCamp/action-slack-notify@v2
