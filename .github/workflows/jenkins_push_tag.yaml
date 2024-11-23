@@ -2,7 +2,7 @@ name: Jenkins. Build and Push Image on Tag
 on:
   push:
     tags:
-      - 'jenkins:v*' # Matches tags like jenkins:v1.2.3
+      - 'jenkins*' # Matches tags like jenkins:v1.2.3
 jobs:
   push_image:
     name: Push Jenkins image with tag
@@ -21,7 +21,7 @@ jobs:
 
       - name: Extract tag version
         id: extract_version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/jenkins:}" >> $GITHUB_ENV
+        run: echo "VERSION=${GITHUB_REF#refs/tags/jenkins=}" >> $GITHUB_ENV
 
       - name: Build Docker image
         id: build_docker

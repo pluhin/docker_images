@@ -7,7 +7,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN jenkins-plugin-cli --plugins ssh-slaves \
 		ansible \
 		docker-plugin \
-		email-ext \
+		##email-ext \
 		mailer \
 		greenballs \
 		simple-theme-plugin \
