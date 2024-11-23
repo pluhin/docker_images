@@ -1,4 +1,4 @@
-name: Test build Jenkins image
+name: Jenkins. Test build image
 on:
   push:
     paths:

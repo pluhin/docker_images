@@ -1,4 +1,4 @@
-name: Build and Push Jenkins Image on Tag
+name: Jenkins. Build and Push Image on Tag
 on:
   push:
     tags:
