@@ -1,0 +1,39 @@
+name: Build Jenkins image
+on:
+  push:
+    paths:
+      - 'jenkins/**'
+jobs:
+  push_image:
+    name: Push Docker image
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v3
+      - name: Log in to the Container registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.CR_PAT }}
+
+      - name: Build and push Jenkins image
+        if: steps.filter.outputs.jenkins == 'true'
+        uses: docker/build-push-action@v3
+        with:
+          context: ./jenkins
+          push: true
+          tags: ghcr.io/pluhin/jenkins:${{ github.sha }}
+
+      - name: Slack Notification
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_CHANNEL: monitor
+          SLACK_COLOR: ${{ job.status }}
+          SLACK_MESSAGE: "Docker image is ready ghcr.io/pluhin/jenkins:${{ github.sha }}"
+          SLACK_TITLE: Docker image build status
+          SLACK_USERNAME: GitHub
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
