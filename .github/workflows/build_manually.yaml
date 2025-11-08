@@ -15,6 +15,7 @@ on:
         - hubot
         - web-demo
         - postgres-backup
+        - cyta-balance-scraper
       tagImage:
         description: 'please add tag'
         required: true
