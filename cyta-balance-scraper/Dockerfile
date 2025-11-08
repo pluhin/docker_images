@@ -14,12 +14,12 @@ rm -rf /var/lib/apt/lists/*
 
 
 WORKDIR /app
-COPY cyta-balance-scraper/requirements.txt /app/requirements.txt
-RUN pip install -r /app/requirements.txt && \
+COPY ./requirements.txt ./app/requirements.txt
+RUN pip install -r ./app/requirements.txt && \
 python -m playwright install --with-deps chromium
 
 
-COPY cyta-balance-scraper/app /app/app
+COPY ./app /app
 
 
 # Non-root
