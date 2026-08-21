@@ -1,8 +1,13 @@
 FROM python:3.12-slim
 
+# Which Playwright browser to ship. The app defaults to webkit; building both
+# webkit and chromium "на всякий случай" doubled the image for an engine that
+# never gets launched. Override with --build-arg BROWSER=chromium if needed.
+ARG BROWSER=webkit
+
 ENV PIP_NO_CACHE_DIR=1 PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
     HEADLESS=1 REFRESH_INTERVAL=1800 STORAGE_PATH=/data/storage_state.json \
-    PYTHONPATH=/app
+    PYTHONPATH=/app BROWSER=${BROWSER}
 
 # Базовые зависимости + CA (root)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -15,25 +20,22 @@ WORKDIR /app
 COPY ./requirements.txt /app/requirements.txt
 RUN pip install -r /app/requirements.txt
 
-# >>> ВАЖНО: системные deps для браузеров (ставим как root)
-# Ставим под WebKit и Chromium на всякий случай
-RUN python -m playwright install-deps webkit && \
-    python -m playwright install-deps chromium
+# Системные deps для браузера — только root это может
+RUN python -m playwright install-deps "$BROWSER" && \
+    rm -rf /var/lib/apt/lists/*
 
-# Код приложения
+# Код приложения. app/__init__.py теперь лежит в репозитории — раньше он
+# создавался прямо в сборке, из-за чего пакет существовал только внутри образа
+# и `python -m app.main` локально не работал.
 COPY ./app /app/app
-RUN python - <<'PY'
-import os; open('/app/app/__init__.py','a').close(); print('init ok')
-PY
 
 # Пользователь рантайма
 RUN useradd -ms /bin/bash appuser && mkdir -p /data && chown -R appuser:appuser /app /data
 USER appuser
 
-# >>> Браузеры ставим уже под appuser (путь кеша совпадёт с рантаймом)
-# Если будешь использовать только WebKit — можно убрать chromium
-RUN python -m playwright install webkit && \
-    python -m playwright install chromium
+# Браузер ставим уже под appuser: кеш ложится в ~/.cache/ms-playwright,
+# и путь совпадает с тем, который ищет рантайм.
+RUN python -m playwright install "$BROWSER"
 
 # sanity-check питоновского синтаксиса
 RUN python -m py_compile /app/app/main.py /app/app/scraper.py

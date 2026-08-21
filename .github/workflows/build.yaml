@@ -1,92 +1,177 @@
 name: Build and Publish Docker Images
 
+# Builds every top-level folder that has a Dockerfile and changed in the push.
+#
+# This workflow had never produced an image. Three faults, each fatal on its own:
+#
+#   1. detect-changes wrote its results to $GITHUB_ENV instead of $GITHUB_OUTPUT,
+#      so steps.get-changes.outputs.has-changes was always empty and the
+#      `if: ... == 'true'` guard on build-and-push never passed.
+#   2. actions/checkout defaults to a depth-1 clone, so `git rev-parse HEAD~1`
+#      and the `git diff` below had no history to read.
+#   3. IMAGE_NAME had no registry prefix, so `docker push` aimed at Docker Hub
+#      while the login was for ghcr.io.
+#
+# It was also workflow_dispatch-only while relying on github.event.before, which
+# only exists on push.
+
 on:
+  push:
+    branches: [master, main]
+    paths-ignore:
+      - "**/*.md"
   workflow_dispatch:
+    inputs:
+      folder:
+        description: "Build only this folder (blank = every folder with a Dockerfile)"
+        required: false
+        default: ""
+
+# GITHUB_TOKEN with packages:write can push to ghcr.io for this owner, so the
+# CR_PAT secret this used to require is no longer needed.
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   detect-changes:
     runs-on: ubuntu-latest
     outputs:
-      changed-folders: ${{ steps.get-changes.outputs.changed-folders }}
+      folders: ${{ steps.get-changes.outputs.folders }}
       has-changes: ${{ steps.get-changes.outputs.has-changes }}
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          # Needed by the diff below; the default shallow clone has no HEAD~1.
+          fetch-depth: 0
 
-      - name: Dump GitHub context
-        env:
-          GITHUB_CONTEXT: ${{ toJson(github) }}
-        run: echo "$GITHUB_CONTEXT"
-
-      - name: Get Changed Folders
+      - name: Get changed folders
         id: get-changes
+        env:
+          MANUAL_FOLDER: ${{ inputs.folder }}
+          EVENT_BEFORE: ${{ github.event.before }}
         run: |
-          # Ensure we have the previous SHA
-          PREVIOUS_SHA="${{ github.event.before }}"
-          if [ -z "$PREVIOUS_SHA" ]; then
-            PREVIOUS_SHA=$(git rev-parse HEAD~1)
+          set -euo pipefail
+
+          dockerised() {
+            for d in */; do
+              [ -f "${d}Dockerfile" ] && printf '%s\n' "${d%/}"
+            done
+          }
+
+          if [ -n "$MANUAL_FOLDER" ]; then
+            if [ ! -f "$MANUAL_FOLDER/Dockerfile" ]; then
+              echo "::error::no Dockerfile in '$MANUAL_FOLDER'"
+              exit 1
+            fi
+            CANDIDATES="$MANUAL_FOLDER"
+            echo "manual run, single folder: $MANUAL_FOLDER"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            CANDIDATES="$(dockerised)"
+            echo "manual run, no folder given — building everything"
+          else
+            # event.before is 0000... for a freshly pushed branch, and may point
+            # at a commit that force-push removed. Fall back rather than fail.
+            BEFORE="$EVENT_BEFORE"
+            if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] \
+               || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              BEFORE="$(git rev-parse HEAD~1 2>/dev/null || true)"
+            fi
+            if [ -z "$BEFORE" ]; then
+              echo "no usable base commit — building everything"
+              CANDIDATES="$(dockerised)"
+            else
+              echo "diffing $BEFORE..${{ github.sha }}"
+              CANDIDATES="$(git diff --name-only "$BEFORE" "${{ github.sha }}" \
+                            | awk -F/ 'NF>1 {print $1}' | sort -u)"
+            fi
           fi
 
-          # Log SHAs for debugging
-          echo "Previous Commit SHA: $PREVIOUS_SHA"
-          echo "Current Commit SHA: ${{ github.sha }}"
-
-          # Get all changed top-level folders
-          CHANGED_FOLDERS=$(git diff --name-only $PREVIOUS_SHA ${{ github.sha }} | awk -F'/' '{print $1}' | sort -u | uniq)
-        
-          # Filter folders containing Dockerfile
-          DOCKER_FOLDERS=""
-          for folder in $CHANGED_FOLDERS; do
+          LIST="$(mktemp)"
+          for folder in $CANDIDATES; do
             if [ -f "$folder/Dockerfile" ]; then
-              DOCKER_FOLDERS="$DOCKER_FOLDERS,\"$folder\""
+              printf '%s\n' "$folder" >> "$LIST"
             fi
           done
 
-          # Remove leading comma and set as output
-          if [ -n "$DOCKER_FOLDERS" ]; then
-            DOCKER_FOLDERS="[${DOCKER_FOLDERS:1}]"
-            echo "changed-folders=$DOCKER_FOLDERS" >> $GITHUB_ENV
-            echo "has-changes=true" >> $GITHUB_ENV
+          # jq builds the matrix JSON. Hand-rolled comma splicing produced
+          # invalid JSON when the list was empty; going through a file and
+          # dropping empty lines keeps the no-changes case an honest [].
+          JSON="$(jq -R -s -c 'split("\n") | map(select(length > 0)) | unique' < "$LIST")"
+          COUNT="$(printf '%s' "$JSON" | jq 'length')"
+
+          echo "folders=$JSON"        >> "$GITHUB_OUTPUT"
+          if [ "$COUNT" -gt 0 ]; then
+            echo "has-changes=true"  >> "$GITHUB_OUTPUT"
           else
-            echo "changed-folders=[]" >> $GITHUB_ENV
-            echo "has-changes=false" >> $GITHUB_ENV
+            echo "has-changes=false" >> "$GITHUB_OUTPUT"
           fi
-          ### Validation
-          echo "$GITHUB_ENV"
+          echo "will build: $JSON"
 
   build-and-push:
     needs: detect-changes
     runs-on: ubuntu-latest
     if: needs.detect-changes.outputs.has-changes == 'true'
     strategy:
+      fail-fast: false
       matrix:
-        folder: ${{ fromJson(needs.detect-changes.outputs.changed-folders) }}
+        folder: ${{ fromJson(needs.detect-changes.outputs.folders) }}
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.CR_PAT }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and Push Image
-        env:
-          IMAGE_NAME: ${{ github.actor }}/${{ matrix.folder }}
-          TAG: ${{ github.sha }}
+      - name: Compute image name
+        id: meta
         run: |
-          docker build -t $IMAGE_NAME:$TAG ./${{ matrix.folder }}
-          docker push $IMAGE_NAME:$TAG
+          set -euo pipefail
+          # ghcr.io rejects capitals in a repository path, and github.actor
+          # carries whatever case the account uses.
+          owner="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+          echo "image=ghcr.io/$owner/${{ matrix.folder }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.folder }}
+          push: true
+          # The sha tag is the immutable record. 1.0.0 moves with it on purpose:
+          # the k3s deployment pins :1.0.0 with imagePullPolicy: Always, so this
+          # is what makes a build actually reach the cluster on a rollout
+          # restart. Worth replacing with a digest-pinned manifest later.
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ github.sha }}
+            ${{ steps.meta.outputs.image }}:1.0.0
+            ${{ steps.meta.outputs.image }}:latest
+          cache-from: type=gha,scope=${{ matrix.folder }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.folder }}
 
       - name: Notify Slack
-        uses: rtCamp/action-slack-notify@v2
-        with:
-          webhook-url: ${{ secrets.SLACK_WEBHOOK }}
-          message: |
-            🎉 *Docker image built and pushed!*
-            - Image: `${ github.actor }}/${{ matrix.folder }}`
-            - Tag: `${{ github.sha }}`
+        # A plain webhook post: rtCamp/action-slack-notify reads the webhook from
+        # the SLACK_WEBHOOK env var and ignores a `webhook-url` input, so the
+        # previous step posted nowhere. Skipped when the secret is absent.
+        if: ${{ success() && env.SLACK_WEBHOOK != '' }}
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          IMAGE: ${{ steps.meta.outputs.image }}
+        run: |
+          set -euo pipefail
+          jq -n --arg text "🎉 Образ собран: \`$IMAGE:1.0.0\` (sha \`${{ github.sha }}\`)" \
+            '{text: $text}' | curl -sS -X POST -H 'Content-Type: application/json' \
+              --data @- "$SLACK_WEBHOOK" >/dev/null
