@@ -9,8 +9,10 @@ carried a Logout link and the account initials, but the words "balance" and
 
 Rather than hard-code one replacement URL and break again at the next redesign,
 this walks a list of candidate account pages and stops at the first one that
-actually yields balances. Every attempt writes its HTML, text and a screenshot
-to DEBUG_DIR, which is what made the original diagnosis possible at all.
+actually yields balances. A page that fails writes its HTML, text and a
+screenshot to DEBUG_DIR — which is what made the original diagnosis possible at
+all — and a page that works writes nothing, because those dumps are the
+logged-in account and do not need to sit on disk.
 """
 
 from __future__ import annotations
@@ -164,7 +166,7 @@ class CytaScraper:
                 continue
         if not (filled_user and filled_pass):
             self._dump(page, "login_form_not_found",
-                       page.evaluate("() => document.body?.innerText || ''") or "")
+                       self._text(page))
             raise ScrapeError(
                 f"login form not found at {page.url} "
                 f"(user={filled_user}, pass={filled_pass})"
@@ -203,11 +205,45 @@ class CytaScraper:
         page.wait_for_load_state("domcontentloaded", timeout=30000)
         log.info("after login: url=%s", page.url)
 
+    def _eval(self, page, script, retries: int = 2):
+        """page.evaluate, tolerating a navigation that lands mid-call.
+
+        The account pages keep redirecting client-side after domcontentloaded,
+        so an evaluate issued right after goto can die with "Execution context
+        was destroyed, most likely because of a navigation". That surfaced as
+        `error: Page.evaluate: Execution context was destroyed` in the API — a
+        scrape failure indistinguishable from a real one, on a page that was
+        perfectly fine a second later.
+        """
+        last = None
+        for attempt in range(retries + 1):
+            try:
+                return page.evaluate(script)
+            except Exception as e:
+                last = e
+                if "Execution context was destroyed" not in str(e):
+                    raise
+                log.info("evaluate raced a navigation, retry %d", attempt + 1)
+                try:
+                    page.wait_for_load_state("domcontentloaded", timeout=15000)
+                except Exception:
+                    pass
+                page.wait_for_timeout(1500)
+        raise last
+
+    def _text(self, page) -> str:
+        return self._eval(page, "() => document.body ? document.body.innerText : ''") or ""
+
     def _is_logged_in(self, page) -> bool:
         """A Logout / signout link is the reliable marker; the URL is not."""
         try:
+            page.wait_for_load_state("domcontentloaded", timeout=15000)
+        except Exception:
+            pass
+        try:
             html = page.content()
         except Exception:
+            log.warning("could not read the page while checking login state")
             return False
         return bool(re.search(r"logout|signout|sign-out", html, re.I))
 
@@ -236,9 +272,10 @@ class CytaScraper:
     POCKET_RE = re.compile(r"Pocket money:?\s*(?:€|EUR)?\s*(-?[\d.,\s]+)", re.I)
 
     def _discover_sims(self, page) -> List[str]:
-        hrefs = page.evaluate(
+        hrefs = self._eval(
+            page,
             """() => Array.from(document.querySelectorAll('a[href*="pId="]'))
-                     .map(a => a.getAttribute('href'))"""
+                     .map(a => a.getAttribute('href'))""",
         ) or []
         out, seen = [], set()
         for href in hrefs:
@@ -265,7 +302,7 @@ class CytaScraper:
         except Exception:
             log.warning("balance label never appeared for %s", pid)
 
-        text = page.evaluate("() => document.body ? document.body.innerText : ''") or ""
+        text = self._text(page)
         m = self.BALANCE_RE.search(text)
         if not m:
             self._dump(page, f"sim_{pid}", text)
@@ -324,7 +361,7 @@ class CytaScraper:
                             verified = True
                         else:
                             self._dump(page, "login_failed",
-                                       page.evaluate("() => document.body?.innerText || ''") or "")
+                                       self._text(page))
                             raise ScrapeError(
                                 f"login appears to have failed, no logout link at {page.url}"
                             )
@@ -337,7 +374,7 @@ class CytaScraper:
                     if sims:
                         return sims
 
-                text = page.evaluate("() => document.body?.innerText || ''") or ""
+                text = self._text(page)
                 self._dump(page, "no_sims", text)
                 raise ScrapeError(
                     "logged in, but found no mobile services on "
