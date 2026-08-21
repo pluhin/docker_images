@@ -1,0 +1,27 @@
+# The Dockerfile copies only requirements.txt and app/, so nothing else reaches
+# the image today. This exists so that stays true if someone later writes
+# `COPY . .` — a local .env or a stray dump must not end up in a public image.
+.env
+.env.*
+*.env
+secrets*
+*.pem
+*.key
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Отладочные артефакты скрепера: HTML и скриншоты залогиненного кабинета.
+last_*.html
+last_*.png
+last_*.txt
+sim_*.txt
+cookies.txt
+storage_state.json
+data/
+
+.git/
+.gitignore
+*.md

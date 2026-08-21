@@ -165,13 +165,21 @@ jobs:
       - name: Notify Slack
         # A plain webhook post: rtCamp/action-slack-notify reads the webhook from
         # the SLACK_WEBHOOK env var and ignores a `webhook-url` input, so the
-        # previous step posted nowhere. Skipped when the secret is absent.
-        if: ${{ success() && env.SLACK_WEBHOOK != '' }}
+        # previous step posted nowhere.
+        #
+        # The "is the secret set" check lives in the script rather than in `if:`
+        # on purpose — the secrets context is not allowed in a step condition,
+        # and whether a step's own env: block is visible to its own if: is not
+        # something to bet a build on.
         env:
           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
           IMAGE: ${{ steps.meta.outputs.image }}
         run: |
           set -euo pipefail
+          if [ -z "${SLACK_WEBHOOK:-}" ]; then
+            echo "SLACK_WEBHOOK not set — skipping the notification"
+            exit 0
+          fi
           jq -n --arg text "🎉 Образ собран: \`$IMAGE:1.0.0\` (sha \`${{ github.sha }}\`)" \
             '{text: $text}' | curl -sS -X POST -H 'Content-Type: application/json' \
               --data @- "$SLACK_WEBHOOK" >/dev/null

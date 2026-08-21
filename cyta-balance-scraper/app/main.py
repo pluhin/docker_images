@@ -11,6 +11,8 @@ from .scraper import CytaScraper, ScrapeError
 class Sim(BaseModel):
     msisdn: str
     balance_eur: float
+    # Cyta shows pocket money as a second figure next to the balance.
+    pocket_money_eur: Optional[float] = None
 
 
 class Balances(BaseModel):
@@ -58,9 +60,26 @@ async def _refresh_async() -> None:
         _set_error("Scraper is not initialized. Check credentials.")
         return
     try:
-        from starlette.concurrency import run_in_threadpool
         sims = await run_in_threadpool(scraper.fetch_balances)
-        _cache = {"data": Balances(timestamp=int(time.time()), sims=sims)}
+        # Converted field by field on purpose. The scraper returns stdlib
+        # dataclasses, and pydantic v2 refuses those for a BaseModel field
+        # without from_attributes — "Input should be a valid dictionary or
+        # instance of Sim". The broad except below would have swallowed that as
+        # just another scrape error, so the API would have kept reporting
+        # failure with the scraping itself working.
+        _cache = {
+            "data": Balances(
+                timestamp=int(time.time()),
+                sims=[
+                    Sim(
+                        msisdn=s.msisdn,
+                        balance_eur=s.balance_eur,
+                        pocket_money_eur=getattr(s, "pocket_money_eur", None),
+                    )
+                    for s in sims
+                ],
+            )
+        }
     except Exception as e:  # ловим всё
         _set_error(str(e))
 
