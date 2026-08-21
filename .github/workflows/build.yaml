@@ -27,8 +27,6 @@ on:
         required: false
         default: ""
 
-# GITHUB_TOKEN with packages:write can push to ghcr.io for this owner, so the
-# CR_PAT secret this used to require is no longer needed.
 permissions:
   contents: read
   packages: write
@@ -135,7 +133,14 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          # CR_PAT first, GITHUB_TOKEN as a fallback. GITHUB_TOKEN alone is not
+          # enough here: ghcr.io/pluhin/cyta-balance-scraper already existed,
+          # created outside this repository, and a package is only writable by
+          # GITHUB_TOKEN once the package itself grants this repo write access.
+          # Without that the push dies with "denied: permission_denied:
+          # write_package" after a full successful build. Granting the package
+          # Actions access in its GitHub settings is the way off the PAT.
+          password: ${{ secrets.CR_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Compute image name
         id: meta
