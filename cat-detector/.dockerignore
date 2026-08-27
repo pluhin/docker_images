@@ -1,0 +1,12 @@
+.env
+.env.*
+secrets*
+*.pem
+*.key
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.git/
+.gitignore
+*.md
