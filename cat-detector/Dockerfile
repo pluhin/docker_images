@@ -18,13 +18,17 @@ RUN pip install -r /app/requirements.txt
 # Если ссылки протухнут, сборка упадёт здесь и это будет видно, а не появится
 # втихую образ без модели.
 RUN mkdir -p /model && \
+    curl -fsSL -o /model/coco.names \
+      https://raw.githubusercontent.com/AlexeyAB/darknet/master/data/coco.names && \
     curl -fsSL -o /model/yolov4-tiny.cfg \
       https://raw.githubusercontent.com/AlexeyAB/darknet/master/cfg/yolov4-tiny.cfg && \
     curl -fsSL -o /model/yolov4-tiny.weights \
       https://github.com/AlexeyAB/darknet/releases/download/darknet_yolo_v4_pre/yolov4-tiny.weights && \
-    curl -fsSL -o /model/coco.names \
-      https://raw.githubusercontent.com/AlexeyAB/darknet/master/data/coco.names && \
-    test -s /model/yolov4-tiny.weights && \
+    curl -fsSL -o /model/yolov4.cfg \
+      https://raw.githubusercontent.com/AlexeyAB/darknet/master/cfg/yolov4.cfg && \
+    curl -fsSL -o /model/yolov4.weights \
+      https://github.com/AlexeyAB/darknet/releases/download/darknet_yolo_v3_optimal/yolov4.weights && \
+    test -s /model/yolov4.weights && test -s /model/yolov4-tiny.weights && \
     grep -qx cat /model/coco.names
 
 COPY ./app /app/app

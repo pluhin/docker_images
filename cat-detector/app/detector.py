@@ -29,8 +29,15 @@ import numpy as np
 log = logging.getLogger(__name__)
 
 MODEL_DIR = os.getenv("MODEL_DIR", "/model")
-CFG = os.path.join(MODEL_DIR, "yolov4-tiny.cfg")
-WEIGHTS = os.path.join(MODEL_DIR, "yolov4-tiny.weights")
+# Полная YOLOv4 по умолчанию, tiny остаётся вариантом на слабое железо.
+# Замер на реальных кадрах с этих камер: tiny нашла человека на одном кадре из
+# четырёх, хотя человек был на всех. Дело не в разрешении — кадры событий тут
+# 440x328…600x448, а не миниатюры; дело в самой модели, ночью в инфракрасе она
+# просто не видит. Полная тяжелее в разы, но десятки кадров в сутки этого
+# не заметят.
+MODEL_NAME = os.getenv("MODEL_NAME", "yolov4")
+CFG = os.path.join(MODEL_DIR, f"{MODEL_NAME}.cfg")
+WEIGHTS = os.path.join(MODEL_DIR, f"{MODEL_NAME}.weights")
 NAMES = os.path.join(MODEL_DIR, "coco.names")
 
 # Порог по умолчанию низкий намеренно. Кот ночью в инфракрасе — маленькое пятно
@@ -38,12 +45,23 @@ NAMES = os.path.join(MODEL_DIR, "coco.names")
 # кадр всё равно попадает в галерею и решает глаз.
 CONF_THRESHOLD = float(os.getenv("CONF_THRESHOLD", "0.25"))
 NMS_THRESHOLD = float(os.getenv("NMS_THRESHOLD", "0.4"))
-INPUT_SIZE = int(os.getenv("INPUT_SIZE", "416"))
+# 608, а не 416: кадры приходят крупнее миниатюр, и на мелких объектах вроде
+# кота в углу двора больший вход заметно поднимает попадания.
+INPUT_SIZE = int(os.getenv("INPUT_SIZE", "608"))
 
 # Что считаем «животным». Собака и медведь тут не опечатка: ночной кот в ИК
 # регулярно опознаётся как dog, а изредка как bear — форма силуэта ближе, чем
 # кажется. Для задачи «кто-то живой и не человек» это один класс.
 ANIMAL_LABELS = {"cat", "dog", "bear", "horse", "sheep", "cow", "bird"}
+
+# Доля кадра, выше которой «животное» не принимается всерьёз.
+#
+# Замер 27.08.2026: человек, прошедший вплотную к камере заднего двора, был
+# опознан как cat 0.419 — силуэт крупным планом в инфракрасе действительно похож.
+# Настоящий кот в этих кадрах мелкий: он на земле, в нескольких метрах, и
+# половину кадра занять не может. Поэтому животное, занявшее больше трети
+# кадра, — это почти наверняка человек вплотную, и считать его котом нельзя.
+MAX_ANIMAL_AREA = float(os.getenv("MAX_ANIMAL_AREA", "0.35"))
 
 
 @dataclass
@@ -51,6 +69,8 @@ class Detection:
     label: str
     confidence: float
     box: List[int]
+    area: float = 0.0        # доля кадра, 0..1
+    oversized: bool = False  # животное неправдоподобного размера
 
 
 class Detector:
@@ -89,13 +109,19 @@ class Detector:
         class_ids, scores, boxes = self.model.detect(
             frame, confThreshold=CONF_THRESHOLD, nmsThreshold=NMS_THRESHOLD
         )
+        fh, fw = frame.shape[:2]
+        frame_area = float(fh * fw) or 1.0
         out: List[Detection] = []
         for cid, score, box in zip(np.array(class_ids).flatten(),
                                    np.array(scores).flatten(),
                                    np.array(boxes).reshape(-1, 4) if len(boxes) else []):
             label = self.classes[int(cid)] if int(cid) < len(self.classes) else str(cid)
-            out.append(Detection(label=label, confidence=round(float(score), 3),
-                                 box=[int(v) for v in box]))
+            b = [int(v) for v in box]
+            area = round((b[2] * b[3]) / frame_area, 3)
+            out.append(Detection(
+                label=label, confidence=round(float(score), 3), box=b, area=area,
+                oversized=(label in ANIMAL_LABELS and area > MAX_ANIMAL_AREA),
+            ))
         out.sort(key=lambda d: d.confidence, reverse=True)
         return out, int((time.monotonic() - started) * 1000)
 

@@ -41,6 +41,8 @@ class Hit(BaseModel):
     label: str
     confidence: float
     box: List[int]
+    area: float = 0.0
+    oversized: bool = False
 
 
 class DetectResponse(BaseModel):
@@ -94,18 +96,21 @@ async def detect(req: DetectRequest) -> DetectResponse:
         log.warning("детекция не удалась: %s", e)
         return DetectResponse(ok=False, error=f"detect: {e}")
 
+    # Животным считается только правдоподобное по размеру: см. MAX_ANIMAL_AREA.
     labels = {h.label for h in hits}
+    animal_hits = [h for h in hits if h.label in ANIMAL_LABELS and not h.oversized]
     best = hits[0] if hits else None
     log.info("кадр %d байт -> %s за %d мс",
              len(data), ", ".join(f"{h.label}:{h.confidence}" for h in hits) or "пусто",
              elapsed)
     return DetectResponse(
         ok=True,
-        has_cat="cat" in labels,
-        has_animal=bool(labels & ANIMAL_LABELS),
+        has_cat=any(h.label == "cat" for h in animal_hits),
+        has_animal=bool(animal_hits),
         has_person="person" in labels,
         best_label=best.label if best else "—",
         best_confidence=best.confidence if best else 0.0,
-        detections=[Hit(label=h.label, confidence=h.confidence, box=h.box) for h in hits],
+        detections=[Hit(label=h.label, confidence=h.confidence, box=h.box,
+                        area=h.area, oversized=h.oversized) for h in hits],
         elapsed_ms=elapsed,
     )
