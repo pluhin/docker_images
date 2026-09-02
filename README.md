@@ -21,7 +21,6 @@
 | [`hubot`](#hubot) | `node:24-alpine` | [![version](https://ghcr-badge.egpl.dev/pluhin/hubot/latest_tag?trim=major&label=version)](https://github.com/pluhin/docker_images/pkgs/container/hubot) [![size](https://ghcr-badge.egpl.dev/pluhin/hubot/size?label=size&color=blue)](https://github.com/pluhin/docker_images/pkgs/container/hubot) |
 | [`jenkins`](#jenkins) | `jenkins/jenkins:lts` | [![version](https://ghcr-badge.egpl.dev/pluhin/jenkins/latest_tag?trim=major&label=version)](https://github.com/pluhin/docker_images/pkgs/container/jenkins) [![size](https://ghcr-badge.egpl.dev/pluhin/jenkins/size?label=size&color=blue)](https://github.com/pluhin/docker_images/pkgs/container/jenkins) |
 | [`plex`](#plex) | `linuxserver/plex:latest` | [![version](https://ghcr-badge.egpl.dev/pluhin/plex/latest_tag?trim=major&label=version)](https://github.com/pluhin/docker_images/pkgs/container/plex) [![size](https://ghcr-badge.egpl.dev/pluhin/plex/size?label=size&color=blue)](https://github.com/pluhin/docker_images/pkgs/container/plex) |
-| [`postgres-backup`](#postgres-backup) | `postgres:17-alpine` | [![version](https://ghcr-badge.egpl.dev/pluhin/postgres-backup/latest_tag?trim=major&label=version)](https://github.com/pluhin/docker_images/pkgs/container/postgres-backup) [![size](https://ghcr-badge.egpl.dev/pluhin/postgres-backup/size?label=size&color=blue)](https://github.com/pluhin/docker_images/pkgs/container/postgres-backup) |
 | [`web-demo`](#web-demo) | `nginx:1.31-alpine` | [![version](https://ghcr-badge.egpl.dev/pluhin/web-demo/latest_tag?trim=major&label=version)](https://github.com/pluhin/docker_images/pkgs/container/web-demo) [![size](https://ghcr-badge.egpl.dev/pluhin/web-demo/size?label=size&color=blue)](https://github.com/pluhin/docker_images/pkgs/container/web-demo) |
 
 ## Как собирается
@@ -61,7 +60,7 @@ Trivy стоит в двух местах.
 
 Порог — **CRITICAL, для которого есть исправление**. `MEDIUM` и `HIGH`
 всегда только сообщаются: половина образов здесь стоит на чужих базах —
-`jenkins/jenkins`, `linuxserver/plex`, `postgres` — и `HIGH` в них есть почти
+`jenkins/jenkins`, `linuxserver/plex` — и `HIGH` в них есть почти
 всегда независимо от нашего кода. Сборка, падающая каждый раз, не защищает, а
 приучает отключать проверку.
 
@@ -214,16 +213,6 @@ Plex с заранее созданными точками монтирован�
 
 ```bash
 docker pull ghcr.io/pluhin/plex:latest
-```
-
-### postgres-backup
-
-pg_dump плюс gcloud: снять дамп и положить в GCS.
-
-База: `postgres:17-alpine`
-
-```bash
-docker pull ghcr.io/pluhin/postgres-backup:latest
 ```
 
 ### web-demo
