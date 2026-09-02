@@ -118,8 +118,24 @@ jobs:
               CANDIDATES="$(dockerised)"
             else
               echo "сравниваем $BEFORE..${{ github.sha }}"
-              CANDIDATES="$(git diff --name-only "$BEFORE" "${{ github.sha }}" \
-                            | awk -F/ 'NF>1 {print $1}' | sort -u)"
+              CHANGED="$(git diff --name-only "$BEFORE" "${{ github.sha }}")"
+              # Изменился сам рецепт — пересобираем всё. Провенанс образа
+              # включает то, как его собрали: порядок шагов, проверку Trivy,
+              # набор тегов и метки. Оставить в реестре образы, собранные
+              # прежним конвейером, значит держать latest, про который уже
+              # нельзя сказать, чем он проверен.
+              #
+              # Этот случай уже стоил одного пропуска: коммит с правками
+              # семи Dockerfile'ов упал на «Set up job», а следующий, что
+              # починил workflow, ничего не пересобрал — в его диффе не было
+              # ни одного каталога с Dockerfile.
+              if printf '%s\n' "$CHANGED" | grep -qx '.github/workflows/build.yaml'; then
+                echo "изменился build.yaml — собираем всё"
+                CANDIDATES="$(dockerised)"
+              else
+                CANDIDATES="$(printf '%s\n' "$CHANGED" \
+                              | awk -F/ 'NF>1 {print $1}' | sort -u)"
+              fi
             fi
           fi
 
