@@ -1,56 +1,67 @@
-name: Build and Publish Docker Images
+name: Build
 
-# Builds every top-level folder that has a Dockerfile and changed in the push.
+# Единственный сборочный workflow на весь репозиторий.
 #
-# This workflow had never produced an image. Three faults, each fatal on its own:
+# ЧТО БЫЛО ДО. Сборок было четыре: эта, build_manually (ручной дубль с
+# устаревшими версиями действий и захардкоженным владельцем), плюс две
+# отдельные — только под jenkins: одна собирала и сканировала на push, вторая
+# собирала по тегу. Обе дублировали то, что здесь уже есть, и обе были
+# сломаны: docker/login-action@v4 не существует, а разбор тега
+# ${GITHUB_REF#refs/tags/jenkins=} ждал схему `jenkins=v1.2.3`, тогда как
+# README обещал `jenkins:v1.2.3` — двоеточие в имени git-тега вообще
+# запрещено. То есть сборка по тегу не работала ни в одном варианте.
 #
-#   1. detect-changes wrote its results to $GITHUB_ENV instead of $GITHUB_OUTPUT,
-#      so steps.get-changes.outputs.has-changes was always empty and the
-#      `if: ... == 'true'` guard on build-and-push never passed.
-#   2. actions/checkout defaults to a depth-1 clone, so `git rev-parse HEAD~1`
-#      and the `git diff` below had no history to read.
-#   3. IMAGE_NAME had no registry prefix, so `docker push` aimed at Docker Hub
-#      while the login was for ghcr.io.
+# ТРИ ПОВОДА ЗАПУСКА, ОДИН КОНВЕЙЕР:
+#   • push в master  → собираются только изменившиеся каталоги, теги
+#                      latest и sha-<7>;
+#   • git-тег вида <образ>/v1.2.3 → релиз одного образа, теги 1.2.3, 1.2, 1
+#                      и latest;
+#   • вручную        → любой каталог или все сразу.
 #
-# It was also workflow_dispatch-only while relying on github.event.before, which
-# only exists on push.
+# ПОЧЕМУ НЕТ paths-ignore. Фильтр путей применяется и к push тега, сравнивая
+# файлы в его коммитах; тег обычно вешают на уже отправленный коммит, разница
+# получается пустая и релизная сборка молча не запускается. Что собирать,
+# решает job discover — там это видно и поддаётся отладке.
 
 on:
   push:
     branches: [master, main]
-    paths-ignore:
-      - "**/*.md"
+    tags: ["*/v*"]
   workflow_dispatch:
     inputs:
       folder:
-        description: "Build only this folder (blank = every folder with a Dockerfile)"
+        description: "Каталог для сборки (пусто = все с Dockerfile)"
         required: false
         default: ""
+        type: string
 
 permissions:
   contents: read
   packages: write
+  security-events: write
 
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  detect-changes:
+  discover:
+    name: Что собирать
     runs-on: ubuntu-latest
     outputs:
-      folders: ${{ steps.get-changes.outputs.folders }}
-      has-changes: ${{ steps.get-changes.outputs.has-changes }}
+      folders: ${{ steps.pick.outputs.folders }}
+      has-work: ${{ steps.pick.outputs.has-work }}
+      version: ${{ steps.pick.outputs.version }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          # Needed by the diff below; the default shallow clone has no HEAD~1.
+          # Диффу ниже нужна история; клон по умолчанию обрезан до одного
+          # коммита, и git rev-parse HEAD~1 в нём не работает.
           fetch-depth: 0
 
-      - name: Get changed folders
-        id: get-changes
+      - name: Выбрать каталоги
+        id: pick
         env:
           MANUAL_FOLDER: ${{ inputs.folder }}
           EVENT_BEFORE: ${{ github.event.before }}
@@ -63,29 +74,50 @@ jobs:
             done
           }
 
-          if [ -n "$MANUAL_FOLDER" ]; then
+          VERSION=""
+
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            # <образ>/v1.2.3 — косая черта разделяет однозначно даже когда в
+            # имени образа есть дефисы (busy-box, cyta-balance-scraper).
+            TAG="${{ github.ref_name }}"
+            CANDIDATES="${TAG%/*}"
+            VERSION="${TAG##*/v}"
+            if [ ! -f "$CANDIDATES/Dockerfile" ]; then
+              echo "::error::тег '$TAG' указывает на каталог '$CANDIDATES', в котором нет Dockerfile"
+              exit 1
+            fi
+            case "$VERSION" in
+              [0-9]*.[0-9]*.[0-9]*) : ;;
+              *) echo "::error::'$VERSION' не похоже на semver; тег должен быть вида <образ>/v1.2.3"; exit 1 ;;
+            esac
+            echo "релиз $CANDIDATES версии $VERSION"
+
+          elif [ -n "$MANUAL_FOLDER" ]; then
             if [ ! -f "$MANUAL_FOLDER/Dockerfile" ]; then
-              echo "::error::no Dockerfile in '$MANUAL_FOLDER'"
+              echo "::error::в '$MANUAL_FOLDER' нет Dockerfile"
               exit 1
             fi
             CANDIDATES="$MANUAL_FOLDER"
-            echo "manual run, single folder: $MANUAL_FOLDER"
+            echo "ручной запуск, один каталог: $MANUAL_FOLDER"
+
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             CANDIDATES="$(dockerised)"
-            echo "manual run, no folder given — building everything"
+            echo "ручной запуск без каталога — собираем всё"
+
           else
-            # event.before is 0000... for a freshly pushed branch, and may point
-            # at a commit that force-push removed. Fall back rather than fail.
+            # event.before равен нулям на первом пуше ветки и может указывать
+            # на коммит, снесённый force-push'ем. В обоих случаях откатываемся,
+            # а не падаем.
             BEFORE="$EVENT_BEFORE"
             if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] \
                || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
               BEFORE="$(git rev-parse HEAD~1 2>/dev/null || true)"
             fi
             if [ -z "$BEFORE" ]; then
-              echo "no usable base commit — building everything"
+              echo "нет пригодного базового коммита — собираем всё"
               CANDIDATES="$(dockerised)"
             else
-              echo "diffing $BEFORE..${{ github.sha }}"
+              echo "сравниваем $BEFORE..${{ github.sha }}"
               CANDIDATES="$(git diff --name-only "$BEFORE" "${{ github.sha }}" \
                             | awk -F/ 'NF>1 {print $1}' | sort -u)"
             fi
@@ -93,98 +125,179 @@ jobs:
 
           LIST="$(mktemp)"
           for folder in $CANDIDATES; do
-            if [ -f "$folder/Dockerfile" ]; then
-              printf '%s\n' "$folder" >> "$LIST"
-            fi
+            [ -f "$folder/Dockerfile" ] && printf '%s\n' "$folder" >> "$LIST"
           done
 
-          # jq builds the matrix JSON. Hand-rolled comma splicing produced
-          # invalid JSON when the list was empty; going through a file and
-          # dropping empty lines keeps the no-changes case an honest [].
+          # jq собирает JSON матрицы. Склейка запятыми вручную давала невалидный
+          # JSON на пустом списке; через файл с отбрасыванием пустых строк
+          # случай «нечего собирать» остаётся честным [].
           JSON="$(jq -R -s -c 'split("\n") | map(select(length > 0)) | unique' < "$LIST")"
           COUNT="$(printf '%s' "$JSON" | jq 'length')"
 
-          echo "folders=$JSON"        >> "$GITHUB_OUTPUT"
-          if [ "$COUNT" -gt 0 ]; then
-            echo "has-changes=true"  >> "$GITHUB_OUTPUT"
-          else
-            echo "has-changes=false" >> "$GITHUB_OUTPUT"
-          fi
-          echo "will build: $JSON"
+          {
+            echo "folders=$JSON"
+            echo "version=$VERSION"
+            [ "$COUNT" -gt 0 ] && echo "has-work=true" || echo "has-work=false"
+          } >> "$GITHUB_OUTPUT"
+          echo "будет собрано: $JSON"
 
-  build-and-push:
-    needs: detect-changes
+  build:
+    name: ${{ matrix.folder }}
+    needs: discover
+    if: needs.discover.outputs.has-work == 'true'
     runs-on: ubuntu-latest
-    if: needs.detect-changes.outputs.has-changes == 'true'
     strategy:
       fail-fast: false
       matrix:
-        folder: ${{ fromJson(needs.detect-changes.outputs.folders) }}
+        folder: ${{ fromJson(needs.discover.outputs.folders) }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Log in to the Container registry
+      - name: Вычислить имя и теги
+        id: meta
+        env:
+          VERSION: ${{ needs.discover.outputs.version }}
+        run: |
+          set -euo pipefail
+          # ghcr.io не принимает заглавные в пути репозитория, а
+          # repository_owner несёт тот регистр, в котором заведён аккаунт.
+          owner="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/$owner/${{ matrix.folder }}"
+
+          if [ -n "$VERSION" ]; then
+            # Релиз по тегу: полная версия плюс скользящие мажор и минор,
+            # чтобы потребитель мог выбрать, насколько крепко пиниться.
+            major="${VERSION%%.*}"
+            rest="${VERSION#*.}"
+            minor="${rest%%.*}"
+            TAGS="$image:$VERSION"$'\n'"$image:$major.$minor"$'\n'"$image:$major"$'\n'"$image:latest"
+          else
+            # Обычный пуш: sha — неизменяемая запись, latest — то, что тянут
+            # развёртывания с imagePullPolicy: Always.
+            TAGS="$image:sha-${GITHUB_SHA::7}"$'\n'"$image:latest"
+          fi
+
+          {
+            echo "image=$image"
+            echo "scan-ref=$image:ci-scan"
+            echo "tags<<__EOT__"
+            echo "$TAGS"
+            echo "__EOT__"
+          } >> "$GITHUB_OUTPUT"
+          echo "теги:"; echo "$TAGS"
+
+      # Сборка идёт дважды намеренно. Первый проход только грузит образ в
+      # локальный демон, чтобы Trivy было что сканировать: пушить непроверенное
+      # нельзя, а сканировать по ссылке в реестре — значит уже опубликовать.
+      # Второй проход берёт всё из кеша и стоит секунды.
+      - name: Собрать для проверки
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.folder }}
+          load: true
+          push: false
+          tags: ${{ steps.meta.outputs.scan-ref }}
+          cache-from: type=gha,scope=${{ matrix.folder }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.folder }}
+
+      # Отчёт для вкладки Security — заливается всегда, в том числе когда
+      # проверка ниже валит сборку, поэтому отдельным шагом и с if: always().
+      - name: Trivy — отчёт в Code scanning
+        uses: aquasecurity/trivy-action@0.28.0
+        if: always()
+        env:
+          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2
+        with:
+          image-ref: ${{ steps.meta.outputs.scan-ref }}
+          format: sarif
+          output: trivy-${{ matrix.folder }}.sarif
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: MEDIUM,HIGH,CRITICAL
+
+      - name: Загрузить SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles(format('trivy-{0}.sarif', matrix.folder)) != ''
+        with:
+          sarif_file: trivy-${{ matrix.folder }}.sarif
+          category: trivy-${{ matrix.folder }}
+
+      # ПОЧЕМУ ПОРОГ CRITICAL, А НЕ HIGH. Половина образов здесь построена на
+      # чужих базах — jenkins/jenkins, linuxserver/plex, postgres, — и HIGH в
+      # них есть почти всегда, независимо от того, что делаем мы. Сборка,
+      # которая падает каждый раз, не защищает, а приучает игнорировать
+      # красное или отключать шаг. Поэтому валит только CRITICAL с
+      # существующим исправлением, а MEDIUM и HIGH видны во вкладке Security,
+      # где их можно разбирать не блокируя релиз.
+      - name: Trivy — критические уязвимости блокируют публикацию
+        uses: aquasecurity/trivy-action@0.28.0
+        env:
+          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2
+        with:
+          image-ref: ${{ steps.meta.outputs.scan-ref }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL
+          trivyignores: .trivyignore
+
+      - name: Войти в ghcr.io
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          # CR_PAT first, GITHUB_TOKEN as a fallback. GITHUB_TOKEN alone is not
-          # enough here: ghcr.io/pluhin/cyta-balance-scraper already existed,
-          # created outside this repository, and a package is only writable by
-          # GITHUB_TOKEN once the package itself grants this repo write access.
-          # Without that the push dies with "denied: permission_denied:
-          # write_package" after a full successful build. Granting the package
-          # Actions access in its GitHub settings is the way off the PAT.
+          # Сначала CR_PAT, GITHUB_TOKEN запасным. Одного GITHUB_TOKEN здесь
+          # мало: пакеты вроде ghcr.io/pluhin/cyta-balance-scraper заведены вне
+          # этого репозитория, а такой пакет доступен GITHUB_TOKEN на запись
+          # только после того, как сам пакет выдаст репозиторию доступ. Без
+          # этого пуш падает с "denied: permission_denied: write_package" уже
+          # после успешной сборки. Выдать пакету Actions-доступ в его
+          # настройках — способ отказаться от PAT.
           password: ${{ secrets.CR_PAT || secrets.GITHUB_TOKEN }}
 
-      - name: Compute image name
-        id: meta
-        run: |
-          set -euo pipefail
-          # ghcr.io rejects capitals in a repository path, and github.actor
-          # carries whatever case the account uses.
-          owner="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
-          echo "image=ghcr.io/$owner/${{ matrix.folder }}" >> "$GITHUB_OUTPUT"
-
-      - name: Build and push
+      - name: Опубликовать
         uses: docker/build-push-action@v6
         with:
           context: ./${{ matrix.folder }}
           push: true
-          # The sha tag is the immutable record. 1.0.0 moves with it on purpose:
-          # the k3s deployment pins :1.0.0 with imagePullPolicy: Always, so this
-          # is what makes a build actually reach the cluster on a rollout
-          # restart. Worth replacing with a digest-pinned manifest later.
-          tags: |
-            ${{ steps.meta.outputs.image }}:${{ github.sha }}
-            ${{ steps.meta.outputs.image }}:1.0.0
-            ${{ steps.meta.outputs.image }}:latest
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.title=${{ matrix.folder }}
+            org.opencontainers.image.licenses=MIT
           cache-from: type=gha,scope=${{ matrix.folder }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.folder }}
 
-      - name: Notify Slack
-        # A plain webhook post: rtCamp/action-slack-notify reads the webhook from
-        # the SLACK_WEBHOOK env var and ignores a `webhook-url` input, so the
-        # previous step posted nowhere.
+      - name: Сообщить в Slack
+        if: always()
+        # Обычный POST на вебхук: rtCamp/action-slack-notify читает адрес из
+        # переменной окружения SLACK_WEBHOOK и игнорирует вход webhook-url,
+        # из-за чего прежний шаг отправлял сообщения в никуда.
         #
-        # The "is the secret set" check lives in the script rather than in `if:`
-        # on purpose — the secrets context is not allowed in a step condition,
-        # and whether a step's own env: block is visible to its own if: is not
-        # something to bet a build on.
+        # Проверка «задан ли секрет» живёт в скрипте, а не в if: намеренно —
+        # контекст secrets в условии шага недоступен, а полагаться на то,
+        # виден ли собственный env: шага его же условию, не стоит.
         env:
           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
           IMAGE: ${{ steps.meta.outputs.image }}
+          VERSION: ${{ needs.discover.outputs.version }}
+          STATUS: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
           if [ -z "${SLACK_WEBHOOK:-}" ]; then
-            echo "SLACK_WEBHOOK not set — skipping the notification"
+            echo "SLACK_WEBHOOK не задан — пропускаем уведомление"
             exit 0
           fi
-          jq -n --arg text "🎉 Образ собран: \`$IMAGE:1.0.0\` (sha \`${{ github.sha }}\`)" \
-            '{text: $text}' | curl -sS -X POST -H 'Content-Type: application/json' \
-              --data @- "$SLACK_WEBHOOK" >/dev/null
+          if [ "$STATUS" = "success" ]; then
+            what="${VERSION:-latest}"
+            text="🐳 Собран \`$IMAGE:$what\`"
+          else
+            text="❌ Сборка \`$IMAGE\` не прошла ($STATUS) — $RUN_URL"
+          fi
+          jq -n --arg text "$text" '{text: $text}' \
+            | curl -sS -X POST -H 'Content-Type: application/json' --data @- "$SLACK_WEBHOOK" >/dev/null

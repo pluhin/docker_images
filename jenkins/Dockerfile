@@ -1,4 +1,6 @@
-FROM jenkins/jenkins:latest
+# lts вместо latest: latest — это weekly-сборка Jenkins, она выходит
+# каждую неделю и ломает плагины чаще, чем приносит нужное.
+FROM jenkins/jenkins:lts
 
 LABEL maintainer="pluhin@gmail.com"
 ARG DEBIAN_FRONTEND=noninteractive

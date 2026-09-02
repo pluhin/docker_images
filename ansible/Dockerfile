@@ -1,4 +1,12 @@
-FROM alpine:latest
+# Ansible под рукой: запустить плейбук, не ставя его на машину.
+FROM alpine:3.24
 LABEL maintainer="pluhin@gmail.com"
-RUN apk update \
-    && apk add --no-cache ansible sshpass ansible-lint
+
+# Ветка Alpine закреплена вместо latest. С latest образ, собранный сегодня и
+# полгода назад, отличается мажорной версией ansible, а воспроизводимость
+# держится только до следующего релиза Alpine. Обновление ветки — отдельный
+# коммит, который видно в истории.
+#
+# apk update убран: с --no-cache индекс и так скачивается свежим, а лишний
+# слой оставался в образе.
+RUN apk add --no-cache ansible ansible-lint sshpass

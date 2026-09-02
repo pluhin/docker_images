@@ -1,0 +1,174 @@
+name: Scan
+
+# Еженедельная перепроверка уже опубликованных образов.
+#
+# ЗАЧЕМ ОТДЕЛЬНО ОТ СБОРКИ. Сборка проверяет образ в момент выпуска, но
+# уязвимости находят потом. Образ, собранный в январе и с тех пор не
+# менявшийся, к весне может обрасти десятком CVE, и ни один push об этом не
+# скажет — потому что push'ей и нет. Этот workflow смотрит на то, что реально
+# лежит в реестре и что тянут потребители.
+#
+# Проверяются теги latest: именно их подставляют развёртывания.
+
+on:
+  schedule:
+    # Понедельник, 06:00 UTC. Раньше рабочей недели, но после выходных, когда
+    # публикуются накопившиеся advisories.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: scan
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    name: Список образов
+    runs-on: ubuntu-latest
+    outputs:
+      folders: ${{ steps.list.outputs.folders }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: list
+        run: |
+          set -euo pipefail
+          LIST="$(mktemp)"
+          for d in */; do
+            [ -f "${d}Dockerfile" ] && printf '%s\n' "${d%/}" >> "$LIST"
+          done
+          JSON="$(jq -R -s -c 'split("\n") | map(select(length > 0)) | unique' < "$LIST")"
+          echo "folders=$JSON" >> "$GITHUB_OUTPUT"
+          echo "проверим: $JSON"
+
+  scan:
+    name: ${{ matrix.folder }}
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        folder: ${{ fromJson(needs.discover.outputs.folders) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Вычислить ссылку на образ
+        id: ref
+        run: |
+          set -euo pipefail
+          owner="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+          echo "image=ghcr.io/$owner/${{ matrix.folder }}:latest" >> "$GITHUB_OUTPUT"
+
+      # Образа с тегом latest может не быть: пакет заводится при первой
+      # публикации, а часть каталогов ещё ни разу не собиралась этим
+      # конвейером. Отсутствие — не провал проверки, поэтому оно выясняется
+      # заранее и мягко.
+      - name: Проверить, что образ опубликован
+        id: exists
+        run: |
+          set -euo pipefail
+          img="${{ steps.ref.outputs.image }}"
+          repo="${img%:*}"; repo="${repo#ghcr.io/}"
+          token="$(curl -sf --max-time 20 "https://ghcr.io/token?scope=repository:$repo:pull" | jq -r '.token // empty')"
+          if [ -z "$token" ]; then
+            echo "нет анонимного доступа к $repo — пропускаем"
+            echo "ok=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+                   -H "Authorization: Bearer $token" \
+                   -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
+                   "https://ghcr.io/v2/$repo/manifests/latest")"
+          if [ "$code" = "200" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "$img не найден (HTTP $code) — пропускаем"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trivy — отчёт
+        if: steps.exists.outputs.ok == 'true'
+        uses: aquasecurity/trivy-action@0.28.0
+        env:
+          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2
+        with:
+          image-ref: ${{ steps.ref.outputs.image }}
+          format: sarif
+          output: trivy-${{ matrix.folder }}.sarif
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: MEDIUM,HIGH,CRITICAL
+          trivyignores: .trivyignore
+
+      - name: Загрузить SARIF
+        if: steps.exists.outputs.ok == 'true' && hashFiles(format('trivy-{0}.sarif', matrix.folder)) != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.folder }}.sarif
+          category: trivy-${{ matrix.folder }}
+
+      # Считаем найденное, чтобы сводка в Slack называла числа, а не
+      # отправляла читать вкладку Security.
+      - name: Посчитать критические
+        id: count
+        if: steps.exists.outputs.ok == 'true'
+        run: |
+          set -euo pipefail
+          f="trivy-${{ matrix.folder }}.sarif"
+          [ -f "$f" ] || { echo "n=0" >> "$GITHUB_OUTPUT"; exit 0; }
+          n="$(jq '[.runs[].results[]? | select(.level == "error")] | length' "$f")"
+          echo "n=$n" >> "$GITHUB_OUTPUT"
+          echo "${{ matrix.folder }}: критических $n"
+
+      # Матричные job'ы делят один набор outputs, и каждая перезаписывала бы
+      # предыдущую, поэтому находки передаются в сводку файлами-артефактами.
+      - name: Сохранить строку для сводки
+        if: steps.exists.outputs.ok == 'true' && steps.count.outputs.n != '0'
+        run: |
+          set -euo pipefail
+          mkdir -p summary
+          echo "• ${{ matrix.folder }} — ${{ steps.count.outputs.n }}" > "summary/${{ matrix.folder }}.txt"
+
+      - name: Выгрузить строку
+        if: steps.exists.outputs.ok == 'true' && steps.count.outputs.n != '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: summary-${{ matrix.folder }}
+          path: summary/
+          retention-days: 1
+
+  report:
+    name: Сводка в Slack
+    needs: scan
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: summary-*
+          merge-multiple: true
+          path: summary
+        continue-on-error: true
+
+      - name: Отправить
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SLACK_WEBHOOK:-}" ]; then
+            echo "SLACK_WEBHOOK не задан — пропускаем"; exit 0
+          fi
+          BODY="$(cat summary/*.txt 2>/dev/null | sort || true)"
+          if [ -z "$BODY" ]; then
+            # Молчать в тишине — правильное поведение для еженедельной
+            # проверки: сообщение без находок через месяц перестают читать.
+            echo "критических нет — не пишем в Slack"; exit 0
+          fi
+          text="$(printf '%s\n%s\n\n%s' \
+                    "🔒 *Еженедельная проверка образов* — критические с исправлением:" \
+                    "$BODY" "Подробности: $RUN_URL")"
+          jq -n --arg text "$text" '{text: $text}' \
+            | curl -sS -X POST -H 'Content-Type: application/json' --data @- "$SLACK_WEBHOOK" >/dev/null
