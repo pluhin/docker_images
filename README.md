@@ -15,7 +15,6 @@
 |---|---|---|
 | [`ansible`](#ansible) | `alpine:3.24` | [![version](https://ghcr-badge.egpl.dev/pluhin/ansible/latest_tag?trim=major&label=version)](https://github.com/pluhin/docker_images/pkgs/container/ansible) [![size](https://ghcr-badge.egpl.dev/pluhin/ansible/size?label=size&color=blue)](https://github.com/pluhin/docker_images/pkgs/container/ansible) |
 | [`busy-box`](#busy-box) | `ubuntu:26.04` | [![version](https://ghcr-badge.egpl.dev/pluhin/busy-box/latest_tag?trim=major&label=version)](https://github.com/pluhin/docker_images/pkgs/container/busy-box) [![size](https://ghcr-badge.egpl.dev/pluhin/busy-box/size?label=size&color=blue)](https://github.com/pluhin/docker_images/pkgs/container/busy-box) |
-| [`cat-detector`](#cat-detector) | `python:3.12-slim` | [![version](https://ghcr-badge.egpl.dev/pluhin/cat-detector/latest_tag?trim=major&label=version)](https://github.com/pluhin/docker_images/pkgs/container/cat-detector) [![size](https://ghcr-badge.egpl.dev/pluhin/cat-detector/size?label=size&color=blue)](https://github.com/pluhin/docker_images/pkgs/container/cat-detector) |
 | [`curl`](#curl) | `alpine:3.24` | [![version](https://ghcr-badge.egpl.dev/pluhin/curl/latest_tag?trim=major&label=version)](https://github.com/pluhin/docker_images/pkgs/container/curl) [![size](https://ghcr-badge.egpl.dev/pluhin/curl/size?label=size&color=blue)](https://github.com/pluhin/docker_images/pkgs/container/curl) |
 | [`cyta-balance-scraper`](#cyta-balance-scraper) | `python:3.12-slim` | [![version](https://ghcr-badge.egpl.dev/pluhin/cyta-balance-scraper/latest_tag?trim=major&label=version)](https://github.com/pluhin/docker_images/pkgs/container/cyta-balance-scraper) [![size](https://ghcr-badge.egpl.dev/pluhin/cyta-balance-scraper/size?label=size&color=blue)](https://github.com/pluhin/docker_images/pkgs/container/cyta-balance-scraper) |
 | [`hubot`](#hubot) | `node:24-alpine` | [![version](https://ghcr-badge.egpl.dev/pluhin/hubot/latest_tag?trim=major&label=version)](https://github.com/pluhin/docker_images/pkgs/container/hubot) [![size](https://ghcr-badge.egpl.dev/pluhin/hubot/size?label=size&color=blue)](https://github.com/pluhin/docker_images/pkgs/container/hubot) |
@@ -73,9 +72,10 @@ Trivy стоит в двух местах.
 репозитории.
 
 Поэтому блокировка включается файлом `.trivy-blocking` в каталоге образа.
-Сейчас он есть у `cyta-balance-scraper` и `cat-detector` — двух образов со
-своим `requirements.txt`. Остальные сканируются так же подробно, но находки
-уходят во вкладку Security и в еженедельную сводку.
+Сейчас он есть у `cyta-balance-scraper` — единственного образа, чьи
+зависимости перечислены здесь же, в `requirements.txt`. Остальные сканируются
+так же подробно, но находки уходят во вкладку Security и в еженедельную
+сводку.
 
 Исключения по конкретным CVE — в [`.trivyignore`](.trivyignore), один файл на
 репозиторий.
@@ -125,14 +125,6 @@ docker build -t ansible ./ansible
 доступ. Иначе пуш падает с `denied: permission_denied: write_package` уже
 после успешной сборки.
 
-## Про cat-detector
-
-Образ оставлен, но в работе не используется: детектор снят 28.08.2026 — за
-неделю он не нашёл на кадрах ни одного животного, только людей. Код и история
-целы, если появится камера, реально смотрящая туда, где ходят коты. Если
-возвращаться не планируется, каталог стоит удалить — он занимает время сборки
-и попадает в еженедельную проверку.
-
 ## Подробности по образам
 
 ### ansible
@@ -153,16 +145,6 @@ docker pull ghcr.io/pluhin/ansible:latest
 
 ```bash
 docker pull ghcr.io/pluhin/busy-box:latest
-```
-
-### cat-detector
-
-YOLOv4 поверх кадров с камер. **Снят с эксплуатации** — см. ниже.
-
-База: `python:3.12-slim`
-
-```bash
-docker pull ghcr.io/pluhin/cat-detector:latest
 ```
 
 ### curl
