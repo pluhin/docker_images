@@ -1,6 +1,13 @@
 # Снять дамп PostgreSQL и положить его в GCS.
 FROM postgres:17-alpine
 
+# Метка source привязывает пакет в GHCR к этому репозиторию — без неё на
+# странице пакета висит «Link this package to a repository». Зачем в
+# Dockerfile, а не только в CI — в README.
+LABEL org.opencontainers.image.source=https://github.com/pluhin/docker_images
+LABEL org.opencontainers.image.description="pg_dump и gcloud: дамп PostgreSQL в GCS"
+LABEL org.opencontainers.image.licenses=MIT
+
 # Версия postgres закреплена на 17 намеренно: pg_dump должен быть не старше
 # сервера, а сервер здесь семнадцатый. Поднимать её следом за сервером, а не
 # впереди него.

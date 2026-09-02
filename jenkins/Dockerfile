@@ -2,6 +2,13 @@
 # каждую неделю и ломает плагины чаще, чем приносит нужное.
 FROM jenkins/jenkins:lts
 
+# Метка source привязывает пакет в GHCR к этому репозиторию — без неё на
+# странице пакета висит «Link this package to a repository». Зачем в
+# Dockerfile, а не только в CI — в README.
+LABEL org.opencontainers.image.source=https://github.com/pluhin/docker_images
+LABEL org.opencontainers.image.description="Jenkins LTS с предустановленным набором плагинов"
+LABEL org.opencontainers.image.licenses=MIT
+
 LABEL maintainer="pluhin@gmail.com"
 ARG DEBIAN_FRONTEND=noninteractive
 

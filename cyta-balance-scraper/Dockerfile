@@ -1,5 +1,12 @@
 FROM python:3.12-slim
 
+# Метка source привязывает пакет в GHCR к этому репозиторию — без неё на
+# странице пакета висит «Link this package to a repository». Зачем в
+# Dockerfile, а не только в CI — в README.
+LABEL org.opencontainers.image.source=https://github.com/pluhin/docker_images
+LABEL org.opencontainers.image.description="Балансы SIM-карт Cyta по HTTP"
+LABEL org.opencontainers.image.licenses=MIT
+
 # Which Playwright browser to ship. The app defaults to webkit; building both
 # webkit and chromium "на всякий случай" doubled the image for an engine that
 # never gets launched. Override with --build-arg BROWSER=chromium if needed.

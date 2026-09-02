@@ -196,9 +196,14 @@ jobs:
             TAGS="$image:sha-${GITHUB_SHA::7}"$'\n'"$image:latest"
           fi
 
+          # Блокирует ли Trivy публикацию — решает файл .trivy-blocking в
+          # каталоге образа. Подробности в комментарии к самому шагу.
+          if [ -f "${{ matrix.folder }}/.trivy-blocking" ]; then gate=1; else gate=0; fi
+
           {
             echo "image=$image"
             echo "scan-ref=$image:ci-scan"
+            echo "gate=$gate"
             echo "tags<<__EOT__"
             echo "$TAGS"
             echo "__EOT__"
@@ -250,21 +255,36 @@ jobs:
           sarif_file: trivy-${{ matrix.folder }}.sarif
           category: trivy-${{ matrix.folder }}
 
-      # ПОЧЕМУ ПОРОГ CRITICAL, А НЕ HIGH. Половина образов здесь построена на
-      # чужих базах — jenkins/jenkins, linuxserver/plex, postgres, — и HIGH в
-      # них есть почти всегда, независимо от того, что делаем мы. Сборка,
-      # которая падает каждый раз, не защищает, а приучает игнорировать
-      # красное или отключать шаг. Поэтому валит только CRITICAL с
-      # существующим исправлением, а MEDIUM и HIGH видны во вкладке Security,
-      # где их можно разбирать не блокируя релиз.
-      - name: Trivy — критические уязвимости блокируют публикацию
+      # КОГДА НАХОДКА ЗАПРЕЩАЕТ ПУБЛИКАЦИЮ, А КОГДА ТОЛЬКО СООБЩАЕТ.
+      #
+      # Порог — CRITICAL с существующим исправлением. MEDIUM и HIGH всегда
+      # только сообщаются: половина образов стоит на чужих базах —
+      # jenkins/jenkins, linuxserver/plex, postgres, — где HIGH есть почти
+      # всегда независимо от нашего кода, и сборка, падающая каждый раз, не
+      # защищает, а приучает отключать проверку.
+      #
+      # Но и CRITICAL блокирует не везде, и это не поблажка. Запрет на
+      # публикацию пересобранного образа не убирает уязвимость: в реестре
+      # остаётся прежний образ, который старше и содержит то же самое плюс
+      # всё, что нашли за время с его выпуска. Для обёртки над чужой базой
+      # запрет означает лишь «latest перестал обновляться», то есть делает
+      # хуже. Смысл гейт имеет там, где зависимости наши и находку можно
+      # закрыть в этом же репозитории — тогда красная сборка заставляет
+      # поднять версию в requirements.txt, а не отложить.
+      #
+      # Поэтому блокировка включается файлом .trivy-blocking в каталоге
+      # образа. Сейчас он есть у cyta-balance-scraper и cat-detector — двух
+      # образов со своим requirements.txt. Остальные сканируются так же
+      # подробно, но находки уходят во вкладку Security и в еженедельную
+      # сводку, а не останавливают выпуск.
+      - name: Trivy — критические
         uses: aquasecurity/trivy-action@v0.36.0
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2
         with:
           image-ref: ${{ steps.meta.outputs.scan-ref }}
           format: table
-          exit-code: "1"
+          exit-code: ${{ steps.meta.outputs.gate }}
           ignore-unfixed: true
           vuln-type: os,library
           severity: CRITICAL
