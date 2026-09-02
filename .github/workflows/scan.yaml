@@ -90,7 +90,12 @@ jobs:
 
       - name: Trivy — отчёт
         if: steps.exists.outputs.ok == 'true'
-        uses: aquasecurity/trivy-action@0.28.0
+        # Тег с префиксом v — обязательно. Прежние workflow ссылались на
+        # aquasecurity/trivy-action@0.28.0, и когда-то это работало: тогда
+        # публиковались оба варианта. Голые теги без v из репозитория убрали,
+        # и ссылка перестала резолвиться — сборка падает на «Set up job», не
+        # доходя ни до одного шага.
+        uses: aquasecurity/trivy-action@v0.36.0
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2
         with:
@@ -100,6 +105,7 @@ jobs:
           ignore-unfixed: true
           vuln-type: os,library
           severity: MEDIUM,HIGH,CRITICAL
+          limit-severities-for-sarif: true
           trivyignores: .trivyignore
 
       - name: Загрузить SARIF
@@ -109,16 +115,31 @@ jobs:
           sarif_file: trivy-${{ matrix.folder }}.sarif
           category: trivy-${{ matrix.folder }}
 
-      # Считаем найденное, чтобы сводка в Slack называла числа, а не
-      # отправляла читать вкладку Security.
+      # Отдельный прогон только по CRITICAL. Считать по уровню в SARIF
+      # нельзя: trivy отображает в "error" и CRITICAL, и HIGH, и сводка
+      # называла бы критическими вдвое больше находок, чем есть.
+      - name: Trivy — только критические, в JSON
+        if: steps.exists.outputs.ok == 'true'
+        uses: aquasecurity/trivy-action@v0.36.0
+        env:
+          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2
+        with:
+          image-ref: ${{ steps.ref.outputs.image }}
+          format: json
+          output: crit-${{ matrix.folder }}.json
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL
+          trivyignores: .trivyignore
+
       - name: Посчитать критические
         id: count
         if: steps.exists.outputs.ok == 'true'
         run: |
           set -euo pipefail
-          f="trivy-${{ matrix.folder }}.sarif"
+          f="crit-${{ matrix.folder }}.json"
           [ -f "$f" ] || { echo "n=0" >> "$GITHUB_OUTPUT"; exit 0; }
-          n="$(jq '[.runs[].results[]? | select(.level == "error")] | length' "$f")"
+          n="$(jq '[.Results[]?.Vulnerabilities[]?] | length' "$f")"
           echo "n=$n" >> "$GITHUB_OUTPUT"
           echo "${{ matrix.folder }}: критических $n"
 

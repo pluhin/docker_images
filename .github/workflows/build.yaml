@@ -206,7 +206,12 @@ jobs:
       # Отчёт для вкладки Security — заливается всегда, в том числе когда
       # проверка ниже валит сборку, поэтому отдельным шагом и с if: always().
       - name: Trivy — отчёт в Code scanning
-        uses: aquasecurity/trivy-action@0.28.0
+        # Тег с префиксом v — обязательно. Прежние workflow ссылались на
+        # aquasecurity/trivy-action@0.28.0, и когда-то это работало: тогда
+        # публиковались оба варианта. Голые теги без v из репозитория убрали,
+        # и ссылка перестала резолвиться — сборка падает на «Set up job», не
+        # доходя ни до одного шага.
+        uses: aquasecurity/trivy-action@v0.36.0
         if: always()
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2
@@ -217,6 +222,10 @@ jobs:
           ignore-unfixed: true
           vuln-type: os,library
           severity: MEDIUM,HIGH,CRITICAL
+          # Без этого SARIF игнорирует severity и выкладывает все уровни,
+          # включая LOW, — вкладка Security перестаёт совпадать с тем, что
+          # объявлено здесь.
+          limit-severities-for-sarif: true
 
       - name: Загрузить SARIF
         uses: github/codeql-action/upload-sarif@v3
@@ -233,7 +242,7 @@ jobs:
       # существующим исправлением, а MEDIUM и HIGH видны во вкладке Security,
       # где их можно разбирать не блокируя релиз.
       - name: Trivy — критические уязвимости блокируют публикацию
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2
         with:
