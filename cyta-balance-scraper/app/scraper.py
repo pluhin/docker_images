@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import shutil
 from dataclasses import dataclass
 from typing import Iterable, List, Optional
 
@@ -28,7 +29,22 @@ from playwright.sync_api import sync_playwright
 log = logging.getLogger(__name__)
 
 BROWSER = os.getenv("BROWSER", "webkit").lower()  # webkit|chromium|firefox
-DEBUG_DIR = os.getenv("DEBUG_DIR", "/data")
+# Дампы лежат в своём подкаталоге, а не в корне тома. Раньше они падали ровно
+# туда, где браузер держит профиль, так что диагностика и состояние браузера
+# были свалены в одну кучу: почистить профиль, не потеряв дампы, было нельзя.
+DEBUG_DIR = os.getenv("DEBUG_DIR", "/data/dumps")
+
+# Строки, по которым узнаётся смерть самого процесса браузера, а не ошибка
+# страницы. Playwright сообщает об этом по-разному в зависимости от того, где
+# оборвалась связь, и все варианты означают одно: контекст непригоден, и
+# повторять запрос в нём бессмысленно.
+_BROWSER_DEATH = (
+    "connection terminated unexpectedly",
+    "target closed",
+    "target page, context or browser has been closed",
+    "browser has been closed",
+    "browser closed",
+)
 
 LOGIN_URL = "https://www.cyta.com.cy/m-login/en"
 
@@ -326,13 +342,66 @@ class CytaScraper:
 
     # ------------------------------------------------------------- entrypoint
 
+    @property
+    def profile_dir(self) -> str:
+        """Каталог профиля браузера — подкаталог тома, а не сам том.
+
+        Раньше профилем служил корень /data, и это стоило четырёх суток
+        простоя 05–09.09.2026. Отравленный профиль убивал webkit на первом
+        же переходе — «Connection terminated unexpectedly» каждые полчаса,
+        никогда не восстанавливаясь. Причина нашлась замером: чистый каталог
+        открывал ту же страницу с HTTP 200, а корень /data — нет, и виноваты
+        были не кеш и не куки целиком, а остатки, которые чистка «по
+        очевидным именам» не задела.
+
+        Отдельный подкаталог даёт то, чего не было: профиль можно снести
+        целиком одной операцией, не трогая ни дампы, ни точку монтирования.
+        """
+        base = os.path.dirname(self.storage_state_path) or "/data"
+        return os.path.join(base, "profile")
+
+    def _wipe_profile(self) -> None:
+        shutil.rmtree(self.profile_dir, ignore_errors=True)
+
+    @staticmethod
+    def _is_browser_death(exc: Exception) -> bool:
+        msg = str(exc).lower()
+        return any(marker in msg for marker in _BROWSER_DEATH)
+
     def fetch_balances(self) -> List[Sim]:
+        """Один обход, при смерти браузера — чистка профиля и вторая попытка.
+
+        Профиль копит состояние между запусками, и однажды это состояние
+        оказывается таким, что браузер умирает на первом переходе. Само
+        оно не рассасывается: 05.09.2026 сбор встал и не поднялся за четыре
+        дня и почти двести попыток, потому что каждая начиналась с того же
+        профиля. Оператор узнал об этом из ежедневного алерта, а починка
+        свелась к rm -rf.
+
+        Повтор один, а не в цикле: если браузер умирает и на чистом профиле,
+        дело не в профиле, и попытки этого не исправят — пусть ошибка дойдёт
+        до алерта.
+        """
+        try:
+            return self._fetch_once()
+        except Exception as exc:
+            if not self._is_browser_death(exc):
+                raise
+            log.warning(
+                "browser died (%s) — wiping %s and retrying once",
+                str(exc).splitlines()[0], self.profile_dir,
+            )
+            self._wipe_profile()
+            return self._fetch_once()
+
+    def _fetch_once(self) -> List[Sim]:
         with sync_playwright() as p:
             browser_type = {"chromium": p.chromium, "webkit": p.webkit,
                             "firefox": p.firefox}.get(BROWSER, p.webkit)
 
+            os.makedirs(self.profile_dir, exist_ok=True)
             ctx_kwargs = dict(
-                user_data_dir=os.path.dirname(self.storage_state_path) or "/data",
+                user_data_dir=self.profile_dir,
                 headless=self.headless,
                 ignore_https_errors=True,
             )
