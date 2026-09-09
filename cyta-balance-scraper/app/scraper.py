@@ -48,6 +48,10 @@ _BROWSER_DEATH = (
 
 LOGIN_URL = "https://www.cyta.com.cy/m-login/en"
 
+# Хост Azure AD B2C. Оказаться на нём после входа означает, что сессии на
+# www.cyta.com.cy нет: нас отправили авторизоваться заново.
+IDENTITY_HOST = "login.cyta.com.cy"
+
 # Tried in order; the first page that yields balances wins. Override with
 # CYTA_ACCOUNT_URLS (comma separated) when Cyta reshuffles things again.
 DEFAULT_ACCOUNT_URLS = (
@@ -422,12 +426,40 @@ class CytaScraper:
                 # landing URL: B2C drops us on a relay that has no session
                 # chrome, so checking there reported a failed login every time.
                 verified = False
+                relogged = False
                 for url in self.account_urls:
                     page.goto(url, wait_until="domcontentloaded", timeout=30000)
                     self._accept_cookies(page)
                     if not verified:
                         if self._is_logged_in(page):
                             verified = True
+                        elif IDENTITY_HOST in page.url and not relogged:
+                            # ВЫБРОСИЛО НАЗАД К B2C — ЭТО ГОНКА, НЕ ОТКАЗ.
+                            #
+                            # _login ждёт возврата с identity-хоста, но по
+                            # таймауту лишь пишет предупреждение и продолжает. Если
+                            # обмен кодом OIDC не успел завершиться, сессии на
+                            # www.cyta.com.cy ещё нет, и первый же переход на
+                            # страницу счёта отбрасывает обратно на authorize.
+                            #
+                            # Так и было 09.09.2026: обход в 08:53 упал с «no
+                            # logout link at .../authorize», а тот же код,
+                            # запущенный руками через десять минут, прошёл
+                            # целиком. Одна повторная попытка входа закрывает
+                            # это, и профиль трогать не нужно — состояние тут
+                            # не при чём.
+                            log.warning("bounced back to %s, logging in again", page.url)
+                            relogged = True
+                            self._login(page)
+                            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                            self._accept_cookies(page)
+                            if self._is_logged_in(page):
+                                verified = True
+                            else:
+                                self._dump(page, "login_failed", self._text(page))
+                                raise ScrapeError(
+                                    "login failed twice, no logout link at " + page.url
+                                )
                         else:
                             self._dump(page, "login_failed",
                                        self._text(page))
