@@ -20,9 +20,19 @@ ENV PIP_NO_CACHE_DIR=1 PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app BROWSER=${BROWSER}
 
 # Базовые зависимости + CA (root)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# apt-get upgrade здесь не для красоты. Базовый образ пересобирается реже,
+# чем Debian выпускает security-обновления, и разница видна: 16.09.2026 Trivy
+# остановил публикацию на трёх критических в perl-base (CVE-2026-13221,
+# CVE-2026-42496, CVE-2026-8376), где исправление 5.40.1-6+deb13u1 уже лежало
+# в security-репозитории, а в образе стояла 5.40.1-6.
+#
+# Обновляются все пакеты, а не один perl-base: набор дыр в базе меняется от
+# месяца к месяцу, и перечислять их поимённо значит возвращаться сюда после
+# каждой находки. Слой стоит несколько мегабайт.
+RUN apt-get update && apt-get -y upgrade && \
+    apt-get install -y --no-install-recommends \
     ca-certificates curl gnupg && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
