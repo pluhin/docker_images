@@ -7,7 +7,7 @@ import logging
 import os
 import time
 
-from .scraper import CytaScraper
+from .scraper import CytaScraper, PartialScrape
 
 # ЛОГИРОВАНИЕ НАСТРАИВАЕТСЯ ЗДЕСЬ, И БЕЗ ЭТОГО ДИАГНОСТИКА СЛЕПА.
 #
@@ -86,8 +86,17 @@ async def _refresh_async() -> None:
         _set_error("Scraper is not initialized. Check credentials.")
         return
     async with _refresh_lock:
+        partial = None
         try:
-            sims = await run_in_threadpool(scraper.fetch_balances)
+            try:
+                sims = await run_in_threadpool(scraper.fetch_balances)
+            except PartialScrape as e:
+                # Карты, которые прочитались, отдаём — панель не должна
+                # пустеть из-за одной сломавшейся. Но error заполняется, иначе
+                # health в Home Assistant показывает «ок» при трёх картах из
+                # четырёх в unknown, и никто ничего не узнаёт.
+                sims, partial = e.sims, str(e)
+                log.warning("partial refresh: %s", partial)
             # Converted field by field on purpose. The scraper returns stdlib
             # dataclasses, and pydantic v2 refuses those for a BaseModel field
             # without from_attributes — "Input should be a valid dictionary or
@@ -97,6 +106,7 @@ async def _refresh_async() -> None:
             _cache = {
                 "data": Balances(
                     timestamp=int(time.time()),
+                    error=partial,
                     sims=[
                         Sim(
                             msisdn=s.msisdn,
@@ -108,7 +118,8 @@ async def _refresh_async() -> None:
                 )
             }
             _last_refresh = int(time.time())
-            log.info("refreshed %d SIMs", len(sims))
+            log.info("refreshed %d SIMs%s", len(sims),
+                     " (partial)" if partial else "")
         except Exception as e:  # ловим всё
             log.warning("refresh failed: %s", e)
             _set_error(str(e))

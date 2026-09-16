@@ -69,6 +69,29 @@ AMOUNT_RE = re.compile(
 )
 
 
+class PartialScrape(Exception):
+    """Часть карт прочитана, часть нет.
+
+    Отдельный класс, потому что это не успех и не отказ. Прежде такой
+    результат возвращался как успех: код брал всё, что удалось собрать, и
+    отдавал наружу без единого признака неполноты.
+
+    16.09.2026 это обошлось дорого. Обход находил четыре карты, читал одну и
+    отдавал её с error=null — а sensor.cyta_health в Home Assistant
+    складывается из «ошибки нет, карт больше нуля, данные свежие» и потому
+    показывал «ок». Три карты из четырёх молча висели в unknown, и ни один
+    алерт не сработал: системе не на что было пожаловаться.
+
+    Несёт с собой то, что удалось прочитать: выбрасывать хорошие карты из-за
+    плохих незачем, панель не должна пустеть. Но наружу это уходит с текстом
+    ошибки.
+    """
+
+    def __init__(self, message: str, sims: List["Sim"]):
+        super().__init__(message)
+        self.sims = sims
+
+
 class ScrapeError(Exception):
     pass
 
@@ -313,26 +336,62 @@ class CytaScraper:
     def _scrape_sim(self, page, base: str, href: str) -> Optional[Sim]:
         pid = re.search(r"pId=(\d+)", href).group(1)
         url = href if href.startswith("http") else base.split("?")[0] + href
-        page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        # The balance block is rendered client-side after load.
-        try:
-            page.wait_for_function(
-                "() => /Your balance is/i.test(document.body.innerText)", timeout=15000
-            )
-        except Exception:
-            log.warning("balance label never appeared for %s", pid)
 
-        text = self._text(page)
-        m = self.BALANCE_RE.search(text)
-        if not m:
+        def load_and_read():
+            """Открыть страницу карты и вернуть распознанный баланс.
+
+            ПЕРЕЗАГРУЗКА ОБЯЗАТЕЛЬНА, И ЭТО НЕ СУЕВЕРИЕ. С 16.09.2026 один
+            goto отдаёт только оболочку сайта: шапка, меню, подвал — около
+            3000 знаков текста, и строки «Your balance is» в ней нет вовсе.
+            Повторная загрузка того же адреса рисует настоящую панель счёта
+            (около 2500 знаков), и баланс появляется. Замер повторялся на
+            всех четырёх картах.
+
+            Без этого обход выглядел работающим: одна карта из четырёх
+            как-то попадала на живую страницу, остальные три молча
+            отваливались.
+            """
+            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            page.reload(wait_until="domcontentloaded", timeout=30000)
+            try:
+                page.wait_for_function(
+                    "() => /Your balance is/i.test(document.body.innerText)", timeout=20000
+                )
+            except Exception:
+                log.warning("balance label never appeared for %s", pid)
+            txt = self._text(page)
+            mm = self.BALANCE_RE.search(txt)
+            if not mm:
+                return None, txt
+            try:
+                return _norm_amount(mm.group(1)), txt
+            except ScrapeError:
+                log.warning("unparseable balance %r for %s", mm.group(1), pid)
+                return None, txt
+
+        balance, text = load_and_read()
+        if balance is None:
             self._dump(page, f"sim_{pid}", text)
             log.warning("no balance for %s at %s", pid, page.url)
             return None
-        try:
-            balance = _norm_amount(m.group(1))
-        except ScrapeError:
-            log.warning("unparseable balance %r for %s", m.group(1), pid)
-            return None
+
+        # НОЛЬ ПЕРЕПРОВЕРЯЕТСЯ. 16.09.2026 одна и та же карта за пять минут
+        # прочиталась как 66,10 и как 0,00 — страница иногда отдаёт нули там,
+        # где денег хватает. Ложный ноль хуже отсутствия данных: он выглядит
+        # правдоподобно и поднимает алерт о пустом счёте.
+        #
+        # Берётся большее из двух чтений, и это безопасно в нужную сторону:
+        # деньги на карте за секунду между попытками не появятся, так что
+        # ненулевое чтение не может быть выдумкой. Обратное — настоящий ноль,
+        # прочитанный как сумма, — потребовало бы, чтобы карта опустела ровно
+        # между двумя запросами.
+        if balance == 0:
+            second, _ = load_and_read()
+            if second is not None and second > 0:
+                log.warning("zero for %s looked wrong, re-read gave %.2f", pid, second)
+                balance = second
+            else:
+                log.info("zero for %s confirmed on re-read", pid)
 
         pocket = None
         pm = self.POCKET_RE.search(text)
@@ -473,6 +532,16 @@ class CytaScraper:
                     sims = [s for s in (self._scrape_sim(page, base, h) for h in hrefs)
                             if s is not None]
                     if sims:
+                        if len(sims) < len(hrefs):
+                            missing = sorted(
+                                set(re.search(r"pId=(\d+)", h).group(1) for h in hrefs)
+                                - set(s.msisdn[4:] for s in sims)
+                            )
+                            raise PartialScrape(
+                                f"read {len(sims)} of {len(hrefs)} cards, "
+                                f"no balance for {', '.join(missing)}",
+                                sims,
+                            )
                         return sims
 
                 text = self._text(page)
