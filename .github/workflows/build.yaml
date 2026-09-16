@@ -290,6 +290,50 @@ jobs:
           severity: CRITICAL
           trivyignores: .trivyignore
 
+      # ЧЕМ ИМЕННО ЗАБЛОКИРОВАЛО. Шаг выше печатает таблицу в лог, но лог
+      # Actions без авторизации не прочитать, а Code scanning — тем более. В
+      # итоге «сборка упала на Trivy» приходило в Slack без единого
+      # идентификатора, и выяснять приходилось перебором: 16.09.2026 на это
+      # ушло два прогона и обновление всех зависимостей вслепую.
+      #
+      # Отдельный прогон, потому что блокирующий шаг уже завершился с ошибкой:
+      # exit-code 0 и JSON дают список, который ниже уходит в сообщение.
+      - name: Trivy — выписать критические для сообщения
+        if: failure()
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@v0.36.0
+        env:
+          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2
+        with:
+          image-ref: ${{ steps.meta.outputs.scan-ref }}
+          format: json
+          output: crit.json
+          exit-code: "0"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL
+          trivyignores: .trivyignore
+
+      - name: Собрать список находок
+        id: crit
+        if: failure()
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          if [ ! -f crit.json ]; then
+            echo "list=" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          list="$(jq -r '
+            [.Results[]?.Vulnerabilities[]?
+             | "\(.VulnerabilityID) \(.PkgName) \(.InstalledVersion)→\(.FixedVersion)"]
+            | unique | .[0:8] | join("\n")' crit.json)"
+          {
+            echo "list<<__EOT__"
+            echo "$list"
+            echo "__EOT__"
+          } >> "$GITHUB_OUTPUT"
+          echo "$list"
+
       - name: Войти в ghcr.io
         uses: docker/login-action@v3
         with:
@@ -331,6 +375,7 @@ jobs:
           IMAGE: ${{ steps.meta.outputs.image }}
           VERSION: ${{ needs.discover.outputs.version }}
           STATUS: ${{ job.status }}
+          CRIT: ${{ steps.crit.outputs.list }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -341,6 +386,10 @@ jobs:
           if [ "$STATUS" = "success" ]; then
             what="${VERSION:-latest}"
             text="🐳 Собран \`$IMAGE:$what\`"
+          elif [ -n "${CRIT:-}" ]; then
+            text="$(printf '%s\n\n%s\n\n%s' \
+              "❌ Сборка \`$IMAGE\` остановлена: критические уязвимости с исправлением" \
+              "$CRIT" "$RUN_URL")"
           else
             text="❌ Сборка \`$IMAGE\` не прошла ($STATUS) — $RUN_URL"
           fi
