@@ -36,6 +36,25 @@ RUN yo hubot --no-insight \
              --description="$HUBOT_DESCRIPTION" \
              --defaults
 
+# Леса убираются сразу после стройки. yo и generator-hubot нужны ровно на
+# одну команду выше, а оставались в готовом образе вместе со своим деревом
+# зависимостей — и все четыре критических находки Trivy были именно там:
+#
+#   generator-hubot/node_modules/lodash      2.4.2   исправлен в 4.17.12 (2019)
+#   generator-hubot/node_modules/decompress  1.0.7   исправлен в 4.2.1
+#   generator-hubot/node_modules/form-data   2.3.3   исправлен в 2.5.4
+#   yo/node_modules/locutus                  2.0.39  исправлен в 3.0.14
+#
+# Обновить их нельзя: версии прибиты внутри самих генераторов, а те давно не
+# обновлялись — lodash 2.4.2 при доступной 4.17.12 говорит сам за себя. Зато
+# можно не тащить генераторы в рантайм: entrypoint их не трогает, ему нужны
+# только npm и bin/hubot.
+#
+# coffeescript остаётся: hubot-скрипты бывают на нём, а критических там нет.
+USER root
+RUN npm uninstall -g yo generator-hubot && npm cache clean --force
+USER hubot
+
 COPY --chown=hubot:hubot entrypoint.sh ./
 RUN chmod +x ./entrypoint.sh
 
